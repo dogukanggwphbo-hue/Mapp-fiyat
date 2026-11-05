@@ -551,3 +551,19 @@ test('kredi tavanı (Vatan dâhil): en kötü tur ve gün sınırları aşmaz; g
   assert.ok(client.spent <= CFG.limits.maxCreditsPerRun, `gerçek tur ${client.spent}`);
   assert.deepEqual(CFG.channelOrder, ['vatan', 'mediamarkt', 'teknosa']);
 });
+
+test('varyant ayrıştırma: 12+256GB, 16GB/1TB, 16/1 TB biçimleri; "A11+ 256Gb" model artısı RAM sayılmaz', () => {
+  const v = (t) => { const x = parseVariant(t); return [x.ram, x.storage]; };
+  assert.deepEqual(v('Galaxy Z Flip8 5G 12+256GB Grafit Gri'), [12, '256GB']);
+  assert.deepEqual(v('Galaxy Z Fold8 5G 16+1TB Krem'), [16, '1TB']);
+  assert.deepEqual(v('Galaxy S26 Ultra 5G 16/1 TB Beyaz'), [16, '1TB']);
+  assert.deepEqual(v('Galaxy S26 Ultra 5G 16GB/1TB Beyaz'), [16, '1TB']);
+  assert.deepEqual(v('Galaxy A06 4GB/128GB Siyah'), [4, '128GB']);
+  assert.deepEqual(v('Galaxy Tab A11+ 256Gb 8GB-11\'\' Android Tablet'), [null, '256GB']);
+  assert.deepEqual(v('Galaxy S25 FE 5G 8/256 Gb Lacivert'), [8, '256GB']);
+});
+
+test('eşleştirme: Vatan "12+256GB" yazımı MediaMarkt "12/256GB" ile bağlanır', () => {
+  assert.deepEqual(modelParts('Galaxy Z Flip8 5G 12+256GB Grafit Gri'), modelParts('SAMSUNG Galaxy Z Flip8 5G 12/256GB Akıllı Telefon Grafit Gri'));
+  assert.deepEqual(modelParts('Galaxy S26 Ultra 5G 16/1 TB Beyaz'), modelParts('Galaxy S26 Ultra 5G 16GB/1TB Beyaz'));
+});

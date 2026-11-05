@@ -2,8 +2,8 @@ name: Fiyat güncelle
 
 on:
   schedule:
-    - cron: '0 3 * * *'    # her gün 06:00 (Türkiye)
-    - cron: '0 15 * * *'   # her gün 18:00 (Türkiye)
+    - cron: '0 8 * * *'    # her gün 11:00 (Türkiye)
+    - cron: '0 16 * * *'   # her gün 19:00 (Türkiye)
   workflow_dispatch:
     inputs:
       force:

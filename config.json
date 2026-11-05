@@ -32,21 +32,27 @@
           "maxPages": 3
         },
         {
-          "q": "akıllı saat",
+          "category": "100004001",
           "scope": "wearable",
           "maxPages": 1
         },
         {
-          "q": "kulaklık",
+          "category": "10000601",
           "scope": "wearable",
           "maxPages": 1
         },
         {
-          "q": "şarj adaptörü",
+          "category": "10000603",
+          "scope": "wearable",
+          "maxPages": 1
+        },
+        {
+          "category": "100002003",
           "scope": "adapter",
           "maxPages": 2
         }
-      ]
+      ],
+      "note": "Teknosa'da anahtar sözcük araması telefonları öne çıkarır; saat, kulaklık ve şarj aletleri bu yüzden KATEGORİ koduyla taranır (100004001 Akıllı Saat, 10000601 Bluetooth Kulaklık, 10000603 Kulak İçi Kulaklık, 100002003 Şarj Aleti)."
     },
     "mediamarkt": {
       "enabled": true,

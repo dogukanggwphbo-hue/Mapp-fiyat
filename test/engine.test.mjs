@@ -381,15 +381,25 @@ test('boş arama sonucu mağazayı durdurmaz: sonraki aramalar çalışır, not 
 test('boş arama sonucu mağazayı durdurmaz (Teknosa)', async () => {
   const base = handlerFor({ tk: [TK.a57, TK.a37] });
   const h = (engine, params) => {
-    if (params.query === 'akıllı saat') throw new ReefError('teknosa/search: HTTP 200 teknosa.com answered a page without a product grid', { status: 200 });
+    if (params.category === '100004001') throw new ReefError('teknosa/search: HTTP 200 teknosa.com answered a page without a product grid', { status: 200 });
     return base(engine, params);
   };
   const c = fakeClient(h);
   const r = await tkc.collect({ client: c, cfg: CFG.stores.teknosa, scope: CFG.scope, now: T1 });
   assert.equal(r.status, 'ok');
   assert.equal(r.items.length, 2);
-  assert.ok(c.calls.some((x) => x.params.query === 'şarj adaptörü'), 'saat araması boş dönse de adaptör araması yapılmalı');
-  assert.match(r.note, /akıllı saat/);
+  assert.ok(c.calls.some((x) => x.params.category === '100002003'), 'saat kategorisi boş dönse de şarj aleti kategorisi taranmalı');
+  assert.match(r.note, /100004001/);
+});
+
+test('Teknosa saat / kulaklık / şarj aletleri KATEGORİ kodundan çekilir (anahtar kelime telefonları öne çıkarır)', async () => {
+  const c = fakeClient(handlerFor({ tk: [TK.a57] }));
+  await tkc.collect({ client: c, cfg: CFG.stores.teknosa, scope: CFG.scope, now: T1 });
+  for (const code of ['100004001', '10000601', '100002003']) {
+    const call = c.calls.find((x) => x.params.category === code);
+    assert.ok(call, 'kategori sorgulanmalı: ' + code);
+    assert.equal(call.params.seller, 'teknosa'); assert.equal(call.params.brand, '2489');
+  }
 });
 
 test('Teknosa tabletleri tablet KATEGORİSİNDEN çekilir; anahtar kelime aramalarında "samsung" geçmez (telefonlar öne geçer)', async () => {
@@ -474,8 +484,9 @@ const ean = (o) => ({ ch: 'mediamarkt', key: o.ean, ownKey: null, match: 'ean', 
 const loose = (o) => ({ ch: 'vatan', ean: null, key: 'v:' + o.mpn.toLowerCase(), ownKey: 'v:' + o.mpn.toLowerCase(), match: 'baslik', name: o.label, ram: 8, storage: '256GB', ...o });
 
 test('eşleştirme: model adı özetinden renk/depolama/RAM/kod atılır', () => {
-  assert.deepEqual(modelParts('Galaxy A27 5G 8/256 GB Akıllı Telefon Açık Pembe'), { model: 'a27 5g', color: 'acik pembe' });
-  assert.deepEqual(modelParts('Samsung Galaxy S25 FE 5G 8/256 Gb Lacivert SM-S731BDBGTUR'), { model: 's25 fe 5g', color: 'lacivert' });
+  // 5G bağlantı bilgisi modelden ayrı bir bayraktır (features().g5); model adı yalın kalır
+  assert.deepEqual(modelParts('Galaxy A27 5G 8/256 GB Akıllı Telefon Açık Pembe'), { model: 'a27', color: 'acik pembe' });
+  assert.deepEqual(modelParts('Samsung Galaxy S25 FE 5G 8/256 Gb Lacivert SM-S731BDBGTUR'), { model: 's25fe', color: 'lacivert' });
 });
 
 test('eşleştirme: uzun model kodu tek EAN grubunda geçiyorsa bağlanır', () => {
@@ -496,12 +507,13 @@ test('eşleştirme: birebir model+depolama+renk eşitliği bağlar; farklı renk
   for (const x of [color, stor, ram]) { assert.equal(x.key, x.ownKey); assert.equal(x.match, 'baslik'); }
 });
 
-test('eşleştirme: belirsizlikte bağlanmaz (iki farklı EAN aynı özellik; aynı kanalda iki aday; kanal zaten o ürünü taşıyor)', () => {
+test('eşleştirme: belirsizlikte bağlanmaz (aynı kanalda iki aday; kanal zaten o ürünü taşıyor); farklı kanaldaki aynı özellikli kayıtlar bağlanır', () => {
+  // farklı barkodlu ama marka/model/hafıza/renk aynı ve kanallar ayrık -> tek satır
   const a1 = ean({ ean: '8806099333331', cat: 'phone', label: 'Galaxy A27 5G 8/256 GB Siyah', ram: 8, storage: '256GB' });
   const a2 = ean({ ean: '8806099333332', cat: 'phone', label: 'Galaxy A27 5G 8/256 GB Siyah', ram: 8, storage: '256GB', ch: 'teknosa' });
   const v1 = loose({ cat: 'phone', label: 'Galaxy A27 5G 8/256 GB Siyah', mpn: 'SM-A276BZKCTUR' });
-  assert.equal(linkItems([a1, a2, v1]), 0);
-  assert.equal(v1.key, v1.ownKey);
+  assert.equal(linkItems([a1, a2, v1]), 2);
+  assert.ok(a1.key === a2.key && a2.key === v1.key);
   const b = ean({ ean: '8806099444441', cat: 'phone', label: 'Galaxy A37 5G 8/256 GB Antrasit', ram: 8, storage: '256GB' });
   const w1 = loose({ cat: 'phone', label: 'Galaxy A37 5G 8/256 GB Antrasit', mpn: 'SM-A376BZAGTUR' });
   const w2 = loose({ cat: 'phone', label: 'Galaxy A37 5G 8/256 GB Antrasit Akıllı Telefon', mpn: 'SM-A376BZAHTUR' });

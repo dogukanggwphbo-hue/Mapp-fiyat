@@ -1,0 +1,41 @@
+name: Fiyat güncelle
+
+on:
+  schedule:
+    - cron: '0 3 * * *'    # her gün 06:00 (Türkiye)
+    - cron: '0 15 * * *'   # her gün 18:00 (Türkiye)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Günlük 2 tur sınırını yoksay (kredi harcar)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fiyat
+  cancel-in-progress: false
+
+jobs:
+  guncelle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Testler
+        run: node --test "test/*.test.mjs"
+      - name: Fiyatları topla
+        env:
+          REEFAPI_KEY: ${{ secrets.REEFAPI_KEY }}
+        run: node collect.mjs ${{ inputs.force && '--force' || '' }}
+      - name: Kaydet
+        run: |
+          git config user.name "mapp-fiyat-bot"
+          git config user.email "mapp-fiyat-bot@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || { git commit -m "Fiyatlar güncellendi" && git push; }

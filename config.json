@@ -1,0 +1,44 @@
+{
+  "_not": "Kapsam: yalnızca GSM telefon. Tablet/adaptör/saat eklemek için 'scope' listesine ekleyin (kredi harcaması artar).",
+  "scope": ["phone"],
+  "tz": "Europe/Istanbul",
+  "limits": {
+    "maxRunsPerDay": 2,
+    "maxCreditsPerRun": 40,
+    "maxCreditsPerDay": 80,
+    "retainDays": 3,
+    "maxPriceGap": 1.5
+  },
+  "stores": {
+    "teknosa": {
+      "enabled": true,
+      "seller": "teknosa",
+      "brandCode": "2489",
+      "creditsPerCall": 1,
+      "queries": [
+        { "q": "samsung galaxy", "scope": "phone", "maxPages": 6 },
+        { "q": "samsung galaxy tab", "scope": "tablet", "maxPages": 2 },
+        { "q": "samsung galaxy watch", "scope": "wearable", "maxPages": 1 },
+        { "q": "samsung galaxy buds", "scope": "wearable", "maxPages": 1 },
+        { "q": "samsung şarj adaptörü", "scope": "adapter", "maxPages": 2 }
+      ]
+    },
+    "mediamarkt": {
+      "enabled": true,
+      "country": "tr",
+      "brand": "SAMSUNG",
+      "creditsPerCall": 2,
+      "queries": [
+        { "q": "samsung galaxy akıllı telefon", "scope": "phone", "maxPages": 10 },
+        { "q": "samsung galaxy tab tablet", "scope": "tablet", "maxPages": 3 },
+        { "q": "samsung galaxy watch", "scope": "wearable", "maxPages": 2 },
+        { "q": "samsung galaxy buds", "scope": "wearable", "maxPages": 2 },
+        { "q": "samsung şarj adaptörü", "scope": "adapter", "maxPages": 2 }
+      ]
+    },
+    "vatan": {
+      "enabled": false,
+      "reason": "Vatan API yanıtında satıcı alanı yok; ürünün mağazanın kendi satışı olduğu doğrulanamadığı için toplanmıyor."
+    }
+  }
+}

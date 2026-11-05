@@ -1,5 +1,5 @@
 // MediaMarkt TR toplayıcı. Kabul kuralı: seller.type === 'retailer' (pazaryeri satıcıları kesinlikle alınmaz).
-import { buildItem } from '../lib/normalize.mjs';
+import { buildItem, classify } from '../lib/normalize.mjs';
 import { validateItem, SELLER_CHECK } from '../lib/validate.mjs';
 import { BudgetError } from '../lib/reef.mjs';
 
@@ -58,7 +58,9 @@ export async function collect({ client, cfg, scope, now }) {
       const rows = Array.isArray(d.results) ? d.results : [];
       stats.pages++; stats.rows += rows.length;
       let wanted = 0;
+      let relevant = 0; // satıcı fark etmeksizin kapsamdaki Samsung ürünleri: sayfalamayı bitirme ölçütü
       for (const row of rows) {
+        if (scope.includes(classify(row.title, [row.category].concat(row.breadcrumb || []).join(' '))) && /^samsung$/i.test(String(row.brand || '').trim())) relevant++;
         const why = accept(row);
         if (why) { bump(stats.rejected, why); continue; }
         const it = buildItem(toFields(row), nowIso);
@@ -71,7 +73,8 @@ export async function collect({ client, cfg, scope, now }) {
         stats.accepted++;
       }
       const last = Number(d.max_page || d.page_count || 1);
-      if (!rows.length || page >= last || !wanted) break; // sonuçlar bitti ya da ilgili ürün kalmadı
+      if (page >= q.maxPages && page < last && relevant) stats.capped = true;
+      if (!rows.length || page >= last || !relevant) break; // sonuçlar bitti ya da ilgili ürün kalmadı
     }
   }
   stats.credits = client.spent - start;
@@ -84,6 +87,7 @@ export async function collect({ client, cfg, scope, now }) {
     items: [...items.values()],
     stats,
     error: error ? String(error.message || error) : (!items.size ? 'Hiç ürün doğrulanamadı (site/API yapısı değişmiş olabilir).' : null),
+    note: stats.capped ? 'Sayfa sınırına ulaşıldı; bazı ürünler eksik olabilir (config.json > maxPages).' : null,
     budgetStop: error instanceof BudgetError,
   };
 }

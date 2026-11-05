@@ -1,6 +1,6 @@
 // Teknosa toplayıcı. Kabul kuralı: seller.is_teknosa === true (marketplace mağazaları kesinlikle alınmaz).
 // İstek ayrıca seller=teknosa ve Samsung marka kodu ile daraltılır; kural yine de her satırda tekrar doğrulanır.
-import { buildItem } from '../lib/normalize.mjs';
+import { buildItem, classify } from '../lib/normalize.mjs';
 import { validateItem, SELLER_CHECK } from '../lib/validate.mjs';
 import { BudgetError, ReefError } from '../lib/reef.mjs';
 
@@ -49,7 +49,8 @@ export async function collect({ client, cfg, scope, now }) {
   for (const q of cfg.queries) {
     if (!scope.includes(q.scope)) continue;
     for (let page = 1; page <= q.maxPages; page++) {
-      const params = { query: q.q, seller: cfg.seller, page };
+      const params = { seller: cfg.seller, page };
+      if (q.category) params.category = q.category; else params.query = q.q;
       if (useBrand) params.brand = cfg.brandCode;
       let r;
       try {
@@ -63,7 +64,9 @@ export async function collect({ client, cfg, scope, now }) {
       const rows = Array.isArray(d.results) ? d.results : [];
       stats.pages++; stats.rows += rows.length;
       let wanted = 0;
+      let relevant = 0; // satıcı fark etmeksizin kapsamdaki Samsung ürünleri: sayfalamayı bitirme ölçütü
       for (const row of rows) {
+        if (scope.includes(classify(row.title, [row.category].concat(row.category_path || []).join(' '))) && /^samsung$/i.test(String(row.brand || '').trim())) relevant++;
         const why = accept(row);
         if (why) { bump(stats.rejected, why); continue; }
         const it = buildItem(toFields(row), nowIso);
@@ -76,7 +79,8 @@ export async function collect({ client, cfg, scope, now }) {
         stats.accepted++;
       }
       const last = Number(d.total_pages || 1);
-      if (!rows.length || page >= last || !wanted) break;
+      if (page >= q.maxPages && page < last && relevant) stats.capped = true;
+      if (!rows.length || page >= last || !relevant) break;
     }
   }
   stats.credits = client.spent - start;
@@ -89,6 +93,7 @@ export async function collect({ client, cfg, scope, now }) {
     items: [...items.values()],
     stats,
     error: error ? String(error.message || error) : (!items.size ? 'Hiç ürün doğrulanamadı (site/API yapısı değişmiş olabilir).' : null),
+    note: stats.capped ? 'Sayfa sınırına ulaşıldı; bazı ürünler eksik olabilir (config.json > maxPages).' : null,
     budgetStop: error instanceof BudgetError,
   };
 }

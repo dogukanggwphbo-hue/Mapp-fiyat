@@ -1,6 +1,8 @@
 {
   "_not": "Kapsam: yalnızca GSM telefon. Tablet/adaptör/saat eklemek için 'scope' listesine ekleyin (kredi harcaması artar).",
-  "scope": ["phone"],
+  "scope": [
+    "phone"
+  ],
   "tz": "Europe/Istanbul",
   "limits": {
     "maxRunsPerDay": 2,
@@ -16,11 +18,31 @@
       "brandCode": "2489",
       "creditsPerCall": 1,
       "queries": [
-        { "q": "samsung galaxy", "scope": "phone", "maxPages": 6 },
-        { "q": "samsung galaxy tab", "scope": "tablet", "maxPages": 2 },
-        { "q": "samsung galaxy watch", "scope": "wearable", "maxPages": 1 },
-        { "q": "samsung galaxy buds", "scope": "wearable", "maxPages": 1 },
-        { "q": "samsung şarj adaptörü", "scope": "adapter", "maxPages": 2 }
+        {
+          "category": "cep-telefonu-c-100001",
+          "scope": "phone",
+          "maxPages": 5
+        },
+        {
+          "q": "samsung galaxy tab",
+          "scope": "tablet",
+          "maxPages": 2
+        },
+        {
+          "q": "samsung galaxy watch",
+          "scope": "wearable",
+          "maxPages": 1
+        },
+        {
+          "q": "samsung galaxy buds",
+          "scope": "wearable",
+          "maxPages": 1
+        },
+        {
+          "q": "samsung şarj adaptörü",
+          "scope": "adapter",
+          "maxPages": 2
+        }
       ]
     },
     "mediamarkt": {
@@ -29,11 +51,31 @@
       "brand": "SAMSUNG",
       "creditsPerCall": 2,
       "queries": [
-        { "q": "samsung galaxy akıllı telefon", "scope": "phone", "maxPages": 10 },
-        { "q": "samsung galaxy tab tablet", "scope": "tablet", "maxPages": 3 },
-        { "q": "samsung galaxy watch", "scope": "wearable", "maxPages": 2 },
-        { "q": "samsung galaxy buds", "scope": "wearable", "maxPages": 2 },
-        { "q": "samsung şarj adaptörü", "scope": "adapter", "maxPages": 2 }
+        {
+          "q": "samsung galaxy akıllı telefon",
+          "scope": "phone",
+          "maxPages": 16
+        },
+        {
+          "q": "samsung galaxy tab tablet",
+          "scope": "tablet",
+          "maxPages": 3
+        },
+        {
+          "q": "samsung galaxy watch",
+          "scope": "wearable",
+          "maxPages": 2
+        },
+        {
+          "q": "samsung galaxy buds",
+          "scope": "wearable",
+          "maxPages": 2
+        },
+        {
+          "q": "samsung şarj adaptörü",
+          "scope": "adapter",
+          "maxPages": 2
+        }
       ]
     },
     "vatan": {

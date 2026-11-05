@@ -250,6 +250,33 @@ test('ReefAPI istemcisi: x-api-key başlığı, gövde biçimi yedeği, anahtar 
   await assert.rejects(() => nokey.call('teknosa', 'search', {}), /REEFAPI_KEY/);
 });
 
+test('sayfalama: yalnızca pazaryeri satırlarından oluşan sayfa taramayı bitirmez', async () => {
+  const mp = (n) => ({ ...MM.market, product_id: 'mp' + n, ean: '', title: `SAMSUNG Galaxy A57 8/256GB Akıllı Telefon Mor ${n}`, url: `https://www.mediamarkt.com.tr/tr/product/_mp-${n}.html` });
+  const pages = { 1: [mp(1), mp(2), mp(3)], 2: [MM.a57, MM.a37] };
+  const c = fakeClient((engine, params) => ({ results: pages[params.page] || [], max_page: 2, page_count: 2 }));
+  const r = await mmc.collect({ client: c, cfg: CFG.stores.mediamarkt, scope: ['phone'], now: T1 });
+  assert.equal(c.calls.length, 2);                 // 1. sayfa tamamen pazaryeri olsa da 2. sayfaya geçildi
+  assert.equal(r.items.length, 2);
+  assert.equal(r.stats.rejected['pazaryeri-satici'], 3);
+});
+
+test('sayfa sınırı: aşılırsa uyarı notu düşer, veri yine de doğrulanmış kalır', async () => {
+  const c = fakeClient(() => ({ results: [MM.a57], max_page: 5, page_count: 5 }));
+  const cfg = { ...CFG.stores.mediamarkt, queries: [{ q: 'x', scope: 'phone', maxPages: 1 }] };
+  const r = await mmc.collect({ client: c, cfg, scope: ['phone'], now: T1 });
+  assert.equal(r.status, 'ok');
+  assert.match(r.note, /Sayfa sınırı/);
+  assert.equal(c.calls.length, 1);
+});
+
+test('Teknosa telefonları kategori sayfasından, seller=teknosa ve marka koduyla çekilir', async () => {
+  const c = fakeClient(handlerFor());
+  await tkc.collect({ client: c, cfg: CFG.stores.teknosa, scope: ['phone'], now: T1 });
+  assert.equal(c.calls[0].params.category, 'cep-telefonu-c-100001');
+  assert.equal(c.calls[0].params.query, undefined);
+  assert.equal(c.calls[0].params.seller, 'teknosa');
+});
+
 test('gizli bilgi: hiçbir proje dosyasında API anahtarı yok', () => {
   const pat = new RegExp('ak_' + 'live_[A-Za-z0-9]{8,}');
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {

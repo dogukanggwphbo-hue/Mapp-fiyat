@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Günlük 2 tur sınırını yoksay (kredi harcar)'
+        description: 'Deneme turu: günlük sınırı yoksay (kredi harcar, ama 11:00 / 19:00 turlarının hakkından düşmez)'
         type: boolean
         default: false
 

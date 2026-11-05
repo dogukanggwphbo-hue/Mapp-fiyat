@@ -156,3 +156,15 @@ test('önbellek: önceki turdan kalan yenilenmiş / outlet kayıt artık tutulma
   const out = mergeItems(prev, [], now, 3);
   assert.deepEqual(out.map((i) => i.key), ['b']);
 });
+
+test('günlük tur hakkı: elle başlatılan (force) deneme turu 11:00 / 19:00 turlarının hakkından düşmez', async () => {
+  const { runsToday } = await import('../lib/store.mjs');
+  const now = new Date('2026-11-06T08:00:00Z');
+  const state = { runs: [
+    { at: '2026-11-05T22:58:00Z', credits: 70, ok: true, force: false }, // 06 Kasım 01:58 TR (zamanlanmış gibi sayılır)
+    { at: '2026-11-06T00:10:00Z', credits: 78, ok: true, force: true },  // elle deneme turu
+  ] };
+  const t = runsToday(state, now, 'Europe/Istanbul');
+  assert.equal(t.length, 1);
+  assert.equal(t[0].force, false);
+});

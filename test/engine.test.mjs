@@ -5,14 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { gtinOk, parseVariant, classify, cleanLabel } from '../lib/normalize.mjs';
+import { gtinOk, parseVariant, classify, cleanLabel, isWebExclusive } from '../lib/normalize.mjs';
 import { validateItem, validateFeed } from '../lib/validate.mjs';
 import { mergeItems, flagOutliers, istDay } from '../lib/store.mjs';
 import { createClient, ReefError } from '../lib/reef.mjs';
 import * as mmc from '../collectors/mediamarkt.mjs';
 import * as tkc from '../collectors/teknosa.mjs';
 import { run } from '../collect.mjs';
-import { MM, TK, fakeClient } from './fixtures.mjs';
+import { MM, MMX, TK, fakeClient } from './fixtures.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CFG = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
@@ -122,7 +122,7 @@ test('uçtan uca: EAN ile kanallar eşleşir, Vatan hiç sorgulanmaz ve doğrula
   const a57 = feed.items.filter((i) => i.key === '8806099044916');
   assert.deepEqual(a57.map((i) => i.ch).sort(), ['mediamarkt', 'teknosa']);
   assert.equal(a57[0].price, 31999);
-  assert.deepEqual(feed.cats, ['phone']);
+  assert.deepEqual(feed.cats, CFG.scope);
   assert.equal(validateFeed(feed).length, 0);
   assert.equal(feed.items.every((i) => i.verified === true), true);
 });
@@ -187,7 +187,7 @@ test('kredi sınırı: tur bütçesini aşmaz (kısmi ve boş sonuç durumları)
   // 3 kredi: Teknosa(1) + MediaMarkt 1. sayfa(2) sığar, 2. sayfa sığmaz → kısmi veri
   const two = (engine) => (engine === 'mediamarkt' ? { results: [MM.a57], max_page: 2, page_count: 2 } : { results: [TK.a57], total_pages: 1 });
   const dir = tmp();
-  const cfg3 = { ...CFG, limits: { ...CFG.limits, maxCreditsPerRun: 3 } };
+  const cfg3 = { ...CFG, scope: ['phone'], limits: { ...CFG.limits, maxCreditsPerRun: 3 } };
   const c3 = fakeClient(two, { max: 3 });
   const o3 = await run({ makeClient: () => c3, cfg: cfg3, dir, now: T1, log: () => {} });
   assert.ok(c3.spent <= 3, 'harcanan ' + c3.spent);
@@ -196,7 +196,7 @@ test('kredi sınırı: tur bütçesini aşmaz (kısmi ve boş sonuç durumları)
   assert.ok(o3.feed.items.some((i) => i.ch === 'mediamarkt'));
   // 2 kredi: Teknosa(1) sonrası 2 kredilik MediaMarkt çağrısı sığmaz → veri yok, hata görünür, harcama aşılmaz
   const dir2 = tmp();
-  const cfg2 = { ...CFG, limits: { ...CFG.limits, maxCreditsPerRun: 2 } };
+  const cfg2 = { ...CFG, scope: ['phone'], limits: { ...CFG.limits, maxCreditsPerRun: 2 } };
   const c2 = fakeClient(two, { max: 2 });
   const o2 = await run({ makeClient: () => c2, cfg: cfg2, dir: dir2, now: T1, log: () => {} });
   assert.ok(c2.spent <= 2);
@@ -292,4 +292,61 @@ test('mergeItems: görülmeyen kayıt retainDays içinde korunur', () => {
   const old = [{ key: 'A', price: 1, since: T1.toISOString(), checkedAt: T1.toISOString() }];
   const out = mergeItems(old, [], T2.toISOString(), 3);
   assert.equal(out.length, 1);
+});
+
+test("Web'e Özel rozeti algılanır; sepet/çok satan rozetleri Web'e Özel sayılmaz", () => {
+  assert.equal(isWebExclusive(["Web'e Özel"]), true);
+  assert.equal(isWebExclusive(['Çok Satanlar', 'İnternete Özel']), true);
+  assert.equal(isWebExclusive(["Online'a özel"]), true);
+  assert.equal(isWebExclusive(['Çok Satanlar']), false);
+  assert.equal(isWebExclusive(['2000 TL üzeri alışverişte sepette indirim']), false);
+  assert.equal(isWebExclusive(null), false);
+  assert.equal(isWebExclusive([]), false);
+});
+
+test("MediaMarkt: Web'e Özel işaretlenir, sepet fiyatı normal fiyattan ayrılır, belirsiz sepet fiyatı alınmaz", async () => {
+  const c = fakeClient(handlerFor({ mm: [MMX.webTab, MMX.cartTab, MMX.cartUnknown, MMX.cartSame] }));
+  const r = await mmc.collect({ client: c, cfg: CFG.stores.mediamarkt, scope: ['tablet'], now: T1 });
+  const by = (id) => r.items.find((i) => i.productId === id);
+  assert.equal(by('1250156').webExclusive, true);
+  assert.equal(by('1250156').price, 5489);
+  assert.equal(by('1250156').listPrice, 5499);
+  const cart = by('1246250');
+  assert.equal(cart.price, 38999, 'raf fiyatı taksit toplamından alınır');
+  assert.equal(cart.cartPrice, 37049.05, 'sepet fiyatı ayrı alanda');
+  assert.equal(cart.webExclusive, false);
+  assert.equal(by('9990101'), undefined, 'raf fiyatı belirlenemeyen ürün alınmaz');
+  assert.equal(r.stats.rejected['sepet-fiyati-belirsiz'], 1);
+  const same = by('9990102');
+  assert.equal(same.price, 13999); assert.equal(same.cartPrice, null);
+  assert.equal(r.items.every((i) => i.priceKind === 'standard' && i.verified), true);
+});
+
+test("Teknosa: Web'e Özel rozeti işaretlenir", async () => {
+  const web = { ...TK.a37, product_id: '100000099001', badges: ["Web'e Özel"], url: TK.a37.url.replace('100000062355', '100000099001') };
+  const c = fakeClient(handlerFor({ tk: [web, TK.a57] }));
+  const r = await tkc.collect({ client: c, cfg: CFG.stores.teknosa, scope: ['phone'], now: T1 });
+  assert.equal(r.items.find((i) => i.productId === '100000099001').webExclusive, true);
+  assert.equal(r.items.find((i) => i.productId === '100000062357').webExclusive, false);
+});
+
+test('kapsam: telefon + tablet + giyilebilir + adaptör; en kötü durum kredi harcaması sınırları aşmaz', () => {
+  assert.deepEqual(CFG.scope, ['phone', 'tablet', 'wearable', 'adapter']);
+  let worst = 0;
+  for (const st of Object.values(CFG.stores)) {
+    if (!st.enabled) continue;
+    for (const q of st.queries) if (CFG.scope.includes(q.scope)) worst += q.maxPages * st.creditsPerCall;
+  }
+  assert.ok(worst <= CFG.limits.maxCreditsPerRun, `en kötü tur ${worst} > ${CFG.limits.maxCreditsPerRun}`);
+  assert.ok(worst * CFG.limits.maxRunsPerDay <= CFG.limits.maxCreditsPerDay, `en kötü gün ${worst * CFG.limits.maxRunsPerDay}`);
+});
+
+test('uçtan uca: tablet kaydı Web\'e Özel alanıyla yayına girer ve doğrulamadan geçer', async () => {
+  const dir = tmp();
+  const out = await run({ makeClient: mk(handlerFor({ mm: [MMX.webTab, MMX.cartTab, MM.a57], tk: [TK.a57] })), cfg: CFG, dir, now: T1, log: () => {} });
+  assert.equal(out.wrote, true, JSON.stringify(out.problems));
+  const feed = JSON.parse(fs.readFileSync(path.join(dir, 'data/prices.json'), 'utf8'));
+  const t = feed.items.find((i) => i.ch === 'mediamarkt' && i.productId === '1250156');
+  assert.equal(t.cat, 'tablet'); assert.equal(t.webExclusive, true);
+  assert.equal(validateFeed(feed).length, 0);
 });

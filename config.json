@@ -1,13 +1,16 @@
 {
-  "_not": "Kapsam: yalnızca GSM telefon. Tablet/adaptör/saat eklemek için 'scope' listesine ekleyin (kredi harcaması artar).",
+  "_not": "Kapsam: GSM telefon + tablet + akıllı saat/kulaklık + şarj adaptörü. Beyaz eşya/TV/aksesuar yok. Daraltmak için 'scope' listesinden çıkarın (kredi harcaması düşer).",
   "scope": [
-    "phone"
+    "phone",
+    "tablet",
+    "wearable",
+    "adapter"
   ],
   "tz": "Europe/Istanbul",
   "limits": {
     "maxRunsPerDay": 2,
-    "maxCreditsPerRun": 40,
-    "maxCreditsPerDay": 80,
+    "maxCreditsPerRun": 70,
+    "maxCreditsPerDay": 140,
     "retainDays": 3,
     "maxPriceGap": 1.5
   },
@@ -59,7 +62,7 @@
         {
           "q": "samsung galaxy tab tablet",
           "scope": "tablet",
-          "maxPages": 3
+          "maxPages": 5
         },
         {
           "q": "samsung galaxy watch",

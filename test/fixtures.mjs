@@ -27,6 +27,18 @@ export const MM = {
   oos: mmBase({ product_id: '9990006', title: 'SAMSUNG Galaxy A27 5G 8/256GB Akıllı Telefon Siyah', ean: '8806099359300', price: 21499, availability: mmAv(false), url: mmUrl('samsung-galaxy-a27', '9990006') }),
 };
 
+// Tablet / rozet / sepet fiyatı örnekleri: ReefAPI canlı yanıtlarına (2026-11-05) göre; 'SENTETİK' işaretliler eklenmiştir.
+const tabBase = (o) => mmBase({ category: 'Samsung Tablet', breadcrumb: ['Bilgisayar', 'Tabletler', 'Android Tabletler', 'Samsung Tablet'], ...o });
+export const MMX = {
+  webTab: tabBase({ product_id: '1250156', title: 'SAMSUNG Galaxy Tab A11 4/64GB Tam Dokunmatik Tablet Gri', ean: '8806097804215', price: 5489, was_price: 5499, was_price_type: 'LOP', badges: ["Web'e Özel"], installment: { months: 6, monthly_amount: 914.83, total_amount: 5489 }, url: mmUrl('samsung-galaxy-tab-a11-464gb', '1250156') }),
+  // Gerçek: fiyat sepet indirimli (38.999 × 0,95), taksit toplamı raf fiyatı
+  cartTab: tabBase({ product_id: '1246250', title: 'SAMSUNG Galaxy TAB S10FE+ 13.1 12/256GB Tam Dokunmatik Tablet Gümüş SM-X620NZSPTU', ean: '8806097196990', price: 37049.05, badges: ['2000 TL üzeri alışverişte sepette indirim'], installment: { months: 6, monthly_amount: 6499.83, total_amount: 38999 }, url: mmUrl('samsung-galaxy-tab-s10fe-131', '1246250') }),
+  // SENTETİK: sepet rozeti var ama raf fiyatı kanıtlanamıyor (taksit bilgisi yok)
+  cartUnknown: tabBase({ product_id: '9990101', title: 'SAMSUNG Galaxy Tab S9 FE 6/128GB Tablet Gri', ean: '8806095106903', price: 15000, badges: ['Sepette %5 indirim'], installment: null, url: mmUrl('samsung-galaxy-tab-s9-fe', '9990101') }),
+  // SENTETİK: sepet rozeti var ama fiyat zaten raf fiyatı (taksit toplamı = fiyat)
+  cartSame: tabBase({ product_id: '9990102', title: 'SAMSUNG Galaxy Tab A11+ 8/256 GB Tablet Gri', ean: '8806097860266', price: 13999, badges: ['2000 TL üzeri alışverişte sepette indirim'], installment: { months: 6, monthly_amount: 2333.17, total_amount: 13999 }, url: mmUrl('samsung-galaxy-tab-a11-plus', '9990102') }),
+};
+
 const tkBase = (o) => ({
   brand: 'Samsung', currency: 'TRY', sponsored: false, was_price: null, discount_percent: null, discount_amount: null, member_price: null,
   member_price_label: null, installment: null, seller: { name: 'TEKNOSA', shop_id: '1001', is_teknosa: true }, in_stock: true,

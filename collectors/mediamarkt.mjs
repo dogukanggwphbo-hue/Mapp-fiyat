@@ -1,9 +1,28 @@
 // MediaMarkt TR toplayıcı. Kabul kuralı: seller.type === 'retailer' (pazaryeri satıcıları kesinlikle alınmaz).
-import { buildItem, classify } from '../lib/normalize.mjs';
+import { buildItem, classify, isWebExclusive } from '../lib/normalize.mjs';
 import { validateItem, SELLER_CHECK } from '../lib/validate.mjs';
 import { BudgetError } from '../lib/reef.mjs';
 
 export const STORE = 'mediamarkt';
+
+/**
+ * Normal (raf) fiyatı ile sepette indirimli fiyatı ayırır. "Sepette indirim" rozetli üründe API'nin price alanı
+ * indirimli çıkabilir (ör. 38.999 TL → 37.049,05 TL); taksit toplamı (installment.total_amount) raf fiyatını verir.
+ * Raf fiyatı güvenle belirlenemezse ürün alınmaz (yanlış fiyat göstermemek için).
+ * @returns {{price:number|null, cartPrice:number|null, reject:string|null}}
+ */
+export function shelfPrice(row) {
+  const price = row && row.price;
+  if (!(typeof price === 'number' && price > 0)) return { price: null, cartPrice: null, reject: 'fiyat-yok' };
+  const cartBadge = Array.isArray(row.badges) && row.badges.some((b) => /sepette/i.test(String(b)));
+  if (!cartBadge) return { price, cartPrice: null, reject: null };
+  const total = row.installment && row.installment.total_amount;
+  if (typeof total === 'number' && total > 0) {
+    if (total <= price) return { price, cartPrice: null, reject: null }; // fiyat zaten raf fiyatı
+    if (price / total >= 0.5) return { price: total, cartPrice: price, reject: null }; // raf = taksit toplamı
+  }
+  return { price: null, cartPrice: null, reject: 'sepet-fiyati-belirsiz' };
+}
 
 /** Satırı kabul eder (null) ya da red nedenini döndürür. */
 export function accept(row) {
@@ -12,13 +31,15 @@ export function accept(row) {
   if (row.seller.name && !/media\s*markt/i.test(row.seller.name)) return 'satici-adi-uyusmuyor';
   if (!/^samsung$/i.test(String(row.brand || '').trim())) return 'marka-samsung-degil';
   if (row.refurbished === true) return 'yenilenmis';
-  if (!(typeof row.price === 'number' && row.price > 0)) return 'fiyat-yok';
+  const sp = shelfPrice(row);
+  if (sp.reject) return sp.reject;
   if (!row.url || !/^https:\/\/(www\.)?mediamarkt\.com\.tr\//.test(row.url)) return 'url-gecersiz';
   return null;
 }
 
 export function toFields(row) {
   const av = row.availability;
+  const sp = shelfPrice(row);
   return {
     ch: STORE,
     id: row.product_id,
@@ -27,10 +48,12 @@ export function toFields(row) {
     url: row.url,
     ean: row.ean,
     mpn: null,
-    price: row.price,
+    price: sp.price,
     listPrice: row.was_price,
     appPrice: row.app_price,
     memberPrice: row.member_price,
+    cartPrice: sp.cartPrice,
+    webExclusive: isWebExclusive(row.badges),
     inStock: av ? (av.buyable_online === false ? false : true) : null,
     sellerCheck: SELLER_CHECK[STORE],
     sellerName: row.seller.name,

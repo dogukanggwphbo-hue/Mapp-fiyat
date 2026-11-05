@@ -1,6 +1,6 @@
 // Teknosa toplayıcı. Kabul kuralı: seller.is_teknosa === true (marketplace mağazaları kesinlikle alınmaz).
 // İstek ayrıca seller=teknosa ve Samsung marka kodu ile daraltılır; kural yine de her satırda tekrar doğrulanır.
-import { buildItem, classify } from '../lib/normalize.mjs';
+import { buildItem, classify, isWebExclusive } from '../lib/normalize.mjs';
 import { validateItem, SELLER_CHECK } from '../lib/validate.mjs';
 import { BudgetError, ReefError } from '../lib/reef.mjs';
 
@@ -29,6 +29,8 @@ export function toFields(row) {
     listPrice: row.was_price,
     appPrice: null,
     memberPrice: row.member_price, // TeknoClub üye fiyatı: ayrı alan, karşılaştırmaya girmez
+    cartPrice: null,
+    webExclusive: isWebExclusive(row.badges),
     inStock: row.in_stock === true ? true : null,
     sellerCheck: SELLER_CHECK[STORE],
     sellerName: row.seller.name,

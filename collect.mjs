@@ -113,7 +113,15 @@ async function main() {
   const key = process.env.REEFAPI_KEY;
   const out = await run({ makeClient: (max) => createClient({ key, maxCredits: max }), cfg, dir, force });
   if (out.problems && out.problems.length) process.exitCode = 1;
-  // Mağaza hatası işi kırmaz: son başarılı veri korunur, durum prices.json içinde görünür.
+  // Tek mağazanın hatası işi kırmaz (son başarılı veri korunur, durum prices.json'da görünür).
+  // Ama hiçbir mağaza çalışmadıysa (ör. anahtar eksik) iş KIRMIZI biter ki fark edilsin.
+  if (out.feed) {
+    const act = Object.values(out.feed.sites).filter((x) => x.status !== 'off' && x.status !== 'unverified');
+    if (act.length && act.every((x) => x.status === 'error')) {
+      console.error('Hiçbir mağaza toplanamadı: ' + act.map((x) => x.error).filter(Boolean).slice(0, 2).join(' | '));
+      process.exitCode = 1;
+    }
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

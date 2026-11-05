@@ -34,6 +34,7 @@ jobs:
           REEFAPI_KEY: ${{ secrets.REEFAPI_KEY }}
         run: node collect.mjs ${{ inputs.force && '--force' || '' }}
       - name: Kaydet
+        if: always()
         run: |
           git config user.name "mapp-fiyat-bot"
           git config user.email "mapp-fiyat-bot@users.noreply.github.com"

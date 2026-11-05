@@ -350,3 +350,57 @@ test('uçtan uca: tablet kaydı Web\'e Özel alanıyla yayına girer ve doğrula
   assert.equal(t.cat, 'tablet'); assert.equal(t.webExclusive, true);
   assert.equal(validateFeed(feed).length, 0);
 });
+
+test('boş arama sonucu mağazayı durdurmaz: sonraki aramalar çalışır, not düşer, durum ok (MediaMarkt)', async () => {
+  const empty = 'samsung galaxy buds';
+  const base = handlerFor({ mm: [MM.a57, MMX.webTab] });
+  const h = (engine, params) => {
+    if (engine === 'mediamarkt' && params.query === empty) throw new ReefError("mediamarkt/search: HTTP 200 www.mediamarkt.com.tr answered 'samsung galaxy buds' with a page that carries no product listing (https://x)", { status: 200 });
+    return base(engine, params);
+  };
+  const c = fakeClient(h);
+  const r = await mmc.collect({ client: c, cfg: CFG.stores.mediamarkt, scope: CFG.scope, now: T1 });
+  assert.equal(r.status, 'ok');
+  assert.ok(r.items.length >= 2);
+  assert.ok(c.calls.some((x) => x.params.query === 'samsung şarj adaptörü'), 'kulaklık araması boş dönse de adaptör araması yapılmalı');
+  assert.match(r.note, /samsung galaxy buds/);
+});
+
+test('boş arama sonucu mağazayı durdurmaz (Teknosa)', async () => {
+  const base = handlerFor({ tk: [TK.a57, TK.a37] });
+  const h = (engine, params) => {
+    if (params.query === 'samsung galaxy tab') throw new ReefError('teknosa/search: HTTP 200 teknosa.com answered a page without a product grid', { status: 200 });
+    return base(engine, params);
+  };
+  const c = fakeClient(h);
+  const r = await tkc.collect({ client: c, cfg: CFG.stores.teknosa, scope: CFG.scope, now: T1 });
+  assert.equal(r.status, 'ok');
+  assert.equal(r.items.length, 2);
+  assert.ok(c.calls.some((x) => x.params.query === 'samsung şarj adaptörü'));
+  assert.match(r.note, /samsung galaxy tab/);
+});
+
+test('geçici hata tek aramayı düşürür, diğerleri sürer (partial); yetki hatası ise her şeyi durdurur', async () => {
+  const base = handlerFor({ mm: [MM.a57] });
+  const soft = (engine, params) => {
+    if (params.query === 'samsung galaxy tab tablet') throw new ReefError('mediamarkt/search: HTTP 503 test', { status: 503 });
+    return base(engine, params);
+  };
+  const c1 = fakeClient(soft);
+  const r1 = await mmc.collect({ client: c1, cfg: CFG.stores.mediamarkt, scope: CFG.scope, now: T1 });
+  assert.equal(r1.status, 'partial');
+  assert.ok(r1.items.some((i) => i.productId === '1253247'));
+  assert.ok(c1.calls.some((x) => x.params.query === 'samsung şarj adaptörü'));
+  const c2 = fakeClient(() => { throw new ReefError('mediamarkt/search: HTTP 401 geçersiz anahtar', { status: 401 }); });
+  const r2 = await mmc.collect({ client: c2, cfg: CFG.stores.mediamarkt, scope: CFG.scope, now: T1 });
+  assert.equal(r2.status, 'error');
+  assert.equal(c2.calls.length, 1, 'yetki hatasında ikinci arama yapılmamalı');
+});
+
+test('sayfalama yalnızca aramanın kendi kategorisine bakar: telefon araması tablet sayfalarında durur (kredi israfı yok)', async () => {
+  const h = (engine, params) => (params.page === 1 ? { results: [MM.a57], max_page: 9 } : { results: [MMX.webTab], max_page: 9 });
+  const c = fakeClient(h);
+  const cfg = { ...CFG.stores.mediamarkt, queries: [{ q: 'telefon', scope: 'phone', maxPages: 16 }] };
+  await mmc.collect({ client: c, cfg, scope: ['phone', 'tablet'], now: T1 });
+  assert.equal(c.calls.length, 2);
+});

@@ -1,7 +1,7 @@
 // MediaMarkt TR toplayıcı. Kabul kuralı: seller.type === 'retailer' (pazaryeri satıcıları kesinlikle alınmaz).
 import { buildItem, classify, isWebExclusive } from '../lib/normalize.mjs';
 import { validateItem, SELLER_CHECK } from '../lib/validate.mjs';
-import { BudgetError } from '../lib/reef.mjs';
+import { BudgetError, isEmptyResult, isFatal } from '../lib/reef.mjs';
 
 export const STORE = 'mediamarkt';
 
@@ -65,7 +65,7 @@ const bump = (o, k) => { o[k] = (o[k] || 0) + 1; };
 
 export async function collect({ client, cfg, scope, now }) {
   const nowIso = now.toISOString();
-  const stats = { pages: 0, rows: 0, accepted: 0, rejected: {}, credits: 0 };
+  const stats = { pages: 0, rows: 0, accepted: 0, rejected: {}, credits: 0, empty: [] };
   const start = client.spent;
   const items = new Map();
   let error = null;
@@ -76,14 +76,18 @@ export async function collect({ client, cfg, scope, now }) {
       let r;
       try {
         r = await client.call('mediamarkt', 'search', { query: q.q, country: cfg.country, brand: cfg.brand, page }, { cost: cfg.creditsPerCall });
-      } catch (e) { error = e; break outer; }
+      } catch (e) {
+        if (isEmptyResult(e)) { stats.empty.push(q.q); break; } // bu aramada ürün yok: sonraki aramaya geç
+        if (isFatal(e)) { error = e; break outer; } // kredi/yetki: tüm turu durdur
+        error = error || e; break; // başka hata: bu aramayı bırak, diğerlerine devam et (durum 'partial')
+      }
       const d = r.data || {};
       const rows = Array.isArray(d.results) ? d.results : [];
       stats.pages++; stats.rows += rows.length;
       let wanted = 0;
-      let relevant = 0; // satıcı fark etmeksizin kapsamdaki Samsung ürünleri: sayfalamayı bitirme ölçütü
+      let relevant = 0; // satıcı fark etmeksizin BU aramanın kategorisindeki Samsung ürünleri: sayfalamayı bitirme ölçütü
       for (const row of rows) {
-        if (scope.includes(classify(row.title, [row.category].concat(row.breadcrumb || []).join(' '))) && /^samsung$/i.test(String(row.brand || '').trim())) relevant++;
+        if (classify(row.title, [row.category].concat(row.breadcrumb || []).join(' ')) === q.scope && /^samsung$/i.test(String(row.brand || '').trim())) relevant++;
         const why = accept(row);
         if (why) { bump(stats.rejected, why); continue; }
         const it = buildItem(toFields(row), nowIso);
@@ -110,7 +114,7 @@ export async function collect({ client, cfg, scope, now }) {
     items: [...items.values()],
     stats,
     error: error ? String(error.message || error) : (!items.size ? 'Hiç ürün doğrulanamadı (site/API yapısı değişmiş olabilir).' : null),
-    note: stats.capped ? 'Sayfa sınırına ulaşıldı; bazı ürünler eksik olabilir (config.json > maxPages).' : null,
+    note: [stats.capped ? 'Sayfa sınırına ulaşıldı; bazı ürünler eksik olabilir (config.json > maxPages).' : null, stats.empty.length ? 'Sonuç dönmeyen aramalar: ' + stats.empty.join(', ') : null].filter(Boolean).join(' · ') || null,
     budgetStop: error instanceof BudgetError,
   };
 }

@@ -168,3 +168,21 @@ test('günlük tur hakkı: elle başlatılan (force) deneme turu 11:00 / 19:00 t
   assert.equal(t.length, 1);
   assert.equal(t[0].force, false);
 });
+
+test('kulaklık: "Kablosuz" / "Kablolu" sözcüğü kablo (aksesuar) sayılmaz; Vatan "Buds4 ANC" başlığı Teknosa/MediaMarkt "Buds4" ile bağlanır', async () => {
+  const { classify } = await import('../lib/normalize.mjs');
+  assert.equal(classify('SAMSUNG Galaxy Buds4 ANC Kulak İçi Kablosuz Bluetooth Kulaklık - Siyah'), 'wearable');
+  assert.equal(classify('SAMSUNG EO-IC100B TYPE-C KABLOLU KULAKLIK - SİYAH'), 'wearable');
+  assert.equal(classify('Samsung 1.8m USB-C Şarj Kablosu Siyah'), 'accessory');
+  assert.equal(classify('Samsung Kablosuz Şarj Standı Siyah'), 'accessory');
+  const t = E('teknosa', 'wearable', 'Samsung Galaxy Buds4 Siyah');
+  const v = L('vatan', 'wearable', 'SAMSUNG Galaxy Buds4 ANC Kulak İçi Kablosuz Bluetooth Kulaklık - Siyah', 'SM-R540NZKATUR');
+  const tp = E('teknosa', 'wearable', 'Samsung Galaxy Buds4 Pro Beyaz');
+  const vp = L('vatan', 'wearable', 'SAMSUNG Galaxy Buds4 Pro ANC Kulak İçi Kablosuz Bluetooth Kulaklık - Beyaz', 'SM-R640NZWATUR');
+  assert.equal(linkItems([t, v, tp, vp]), 2);
+  assert.ok(same(t, v)); assert.ok(same(tp, vp)); assert.notEqual(t.key, tp.key);
+  // kablolu kulaklık: EO-IC100B kodu + renk
+  const m = E('mediamarkt', 'wearable', 'SAMSUNG EO-IC100B Kulak İçi Kablolu Kulak Siyah');
+  const vw = L('vatan', 'wearable', 'SAMSUNG EO-IC100B TYPE-C KABLOLU KULAKLIK - SİYAH', 'EO-IC100BBEGWW');
+  assert.equal(linkItems([m, vw]), 1);
+});

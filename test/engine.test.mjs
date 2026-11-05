@@ -12,7 +12,9 @@ import { createClient, ReefError } from '../lib/reef.mjs';
 import * as mmc from '../collectors/mediamarkt.mjs';
 import * as tkc from '../collectors/teknosa.mjs';
 import { run } from '../collect.mjs';
-import { MM, MMX, TK, fakeClient } from './fixtures.mjs';
+import { MM, MMX, TK, VT, fakeClient } from './fixtures.mjs';
+import * as vtc from '../collectors/vatan.mjs';
+import { linkItems, modelParts } from '../lib/link.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CFG = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
@@ -22,11 +24,12 @@ const T2 = new Date('2026-11-05T15:00:00Z'); // 18:00 TR
 const T3 = new Date('2026-11-05T19:00:00Z'); // 22:00 TR (aynı gün)
 const D2 = new Date('2026-11-06T03:00:00Z'); // ertesi gün
 
-function handlerFor({ mm = Object.values(MM), tk = Object.values(TK), fail = {} } = {}) {
+function handlerFor({ mm = Object.values(MM), tk = Object.values(TK), vt = [VT.a37, VT.a27, VT.a27pembe, VT.a17, VT.s25fe, VT.outlet, VT.used, VT.otherBrand, VT.badHost], fail = {} } = {}) {
   return (engine, params) => {
     if (fail[engine]) throw new ReefError(`${engine}: HTTP 503 test hatası`, { status: 503 });
     if (engine === 'mediamarkt') return { results: mm, max_page: 1, page_count: 1 };
     if (engine === 'teknosa') return { results: tk, total_pages: 1 };
+    if (engine === 'vatan') return { results: vt, total_pages: 1 };
     throw new Error('beklenmeyen motor: ' + engine);
   };
 }
@@ -109,16 +112,23 @@ test('Teknosa toplayıcı: marka kodu + seller=teknosa istenir, üye fiyatı ayr
   assert.equal(a57.price, 31999); assert.equal(a57.listPrice, 35499);
 });
 
-test('uçtan uca: EAN ile kanallar eşleşir, Vatan hiç sorgulanmaz ve doğrulanamadı görünür', async () => {
+test('uçtan uca: EAN ile kanallar eşleşir; Vatan toplanır, sepette fiyatı ayrı kalır, outlet/ikinci el/başka marka alınmaz', async () => {
   const dir = tmp();
-  const h = handlerFor();
-  const client = fakeClient(h);
+  const client = fakeClient(handlerFor());
   const out = await run({ makeClient: () => client, cfg: CFG, dir, now: T1, log: () => {} });
   assert.equal(out.wrote, true, JSON.stringify(out.problems));
-  assert.ok(!client.calls.some((c) => c.engine === 'vatan'));
   const feed = JSON.parse(fs.readFileSync(path.join(dir, 'data/prices.json'), 'utf8'));
-  assert.equal(feed.sites.vatan.status, 'unverified');
-  assert.equal(feed.items.filter((i) => i.ch === 'vatan').length, 0);
+  assert.equal(feed.sites.vatan.status, 'ok');
+  const vt = feed.items.filter((i) => i.ch === 'vatan');
+  assert.deepEqual(vt.map((i) => i.mpn).sort(), ['SM-A176BZKDTUR', 'SM-A276BLICTUR', 'SM-A276BZKCTUR', 'SM-A376BZAGTUR', 'SM-S731BDBGTUR']);
+  const a27 = vt.find((i) => i.mpn === 'SM-A276BZKCTUR');
+  assert.equal(a27.price, 21499, 'sepette fiyatı (19779) price olamaz');
+  assert.equal(a27.cartPrice, 19779); assert.equal(a27.cartLabel, "Gece'ye özel sepette");
+  const a27p = vt.find((i) => i.mpn === 'SM-A276BLICTUR');
+  assert.equal(a27p.price, 18999); assert.equal(a27p.listPrice, 21499); assert.equal(a27p.webExclusive, true);
+  assert.deepEqual(a27p.tags, ["Web'e Özel"]);
+  assert.deepEqual(feed.channels.map((c) => c.id), ['vatan', 'mediamarkt', 'teknosa']);
+  assert.equal(feed.catLabels.adapter, 'Adaptör');
   const a57 = feed.items.filter((i) => i.key === '8806099044916');
   assert.deepEqual(a57.map((i) => i.ch).sort(), ['mediamarkt', 'teknosa']);
   assert.equal(a57[0].price, 31999);
@@ -216,14 +226,16 @@ test('aykırı fark: kanallar arası >1.5x ise kontrol gerekli', () => {
   assert.equal(items[0].flag, 'sapma'); assert.equal(items[2].flag, null);
 });
 
-test('doğrulama kapısı: doğrulanmamış/pazaryeri/Vatan kayıtları reddedilir', async () => {
+test('doğrulama kapısı: doğrulanmamış/pazaryeri/yanlış adresli kayıtlar reddedilir', async () => {
   const c = fakeClient(handlerFor());
   const r = await mmc.collect({ client: c, cfg: CFG.stores.mediamarkt, scope: ['phone'], now: T1 });
   const good = r.items[0];
   assert.equal(validateItem(good), null);
   assert.equal(validateItem({ ...good, verified: false }), 'satici-dogrulanmamis');
   assert.equal(validateItem({ ...good, sellerCheck: 'seller.is_teknosa=true' }), 'satici-dogrulanmamis');
-  assert.equal(validateItem({ ...good, ch: 'vatan' }), 'kanal-gecersiz');
+  assert.equal(validateItem({ ...good, ch: 'bilinmeyen' }), 'kanal-gecersiz');
+  assert.equal(validateItem({ ...good, ch: 'vatan', sellerCheck: 'site-tek-satici', url: 'https://www.mediamarkt.com.tr/x' }), 'url-gecersiz');
+  assert.equal(validateItem({ ...good, ch: 'vatan' }), 'satici-dogrulanmamis', 'MediaMarkt doğrulaması Vatan kaydına uygulanamaz');
   assert.equal(validateItem({ ...good, price: 0 }), 'fiyat-gecersiz');
   assert.equal(validateItem({ ...good, url: 'https://baska-site.com/x' }), 'url-gecersiz');
   assert.equal(validateItem({ ...good, priceKind: 'member' }), 'fiyat-turu');
@@ -352,7 +364,7 @@ test('uçtan uca: tablet kaydı Web\'e Özel alanıyla yayına girer ve doğrula
 });
 
 test('boş arama sonucu mağazayı durdurmaz: sonraki aramalar çalışır, not düşer, durum ok (MediaMarkt)', async () => {
-  const empty = 'samsung galaxy buds';
+  const empty = 'samsung kulaklık';
   const base = handlerFor({ mm: [MM.a57, MMX.webTab] });
   const h = (engine, params) => {
     if (engine === 'mediamarkt' && params.query === empty) throw new ReefError("mediamarkt/search: HTTP 200 www.mediamarkt.com.tr answered 'samsung galaxy buds' with a page that carries no product listing (https://x)", { status: 200 });
@@ -363,21 +375,30 @@ test('boş arama sonucu mağazayı durdurmaz: sonraki aramalar çalışır, not 
   assert.equal(r.status, 'ok');
   assert.ok(r.items.length >= 2);
   assert.ok(c.calls.some((x) => x.params.query === 'samsung şarj adaptörü'), 'kulaklık araması boş dönse de adaptör araması yapılmalı');
-  assert.match(r.note, /samsung galaxy buds/);
+  assert.match(r.note, /samsung kulaklık/);
 });
 
 test('boş arama sonucu mağazayı durdurmaz (Teknosa)', async () => {
   const base = handlerFor({ tk: [TK.a57, TK.a37] });
   const h = (engine, params) => {
-    if (params.query === 'samsung galaxy tab') throw new ReefError('teknosa/search: HTTP 200 teknosa.com answered a page without a product grid', { status: 200 });
+    if (params.query === 'akıllı saat') throw new ReefError('teknosa/search: HTTP 200 teknosa.com answered a page without a product grid', { status: 200 });
     return base(engine, params);
   };
   const c = fakeClient(h);
   const r = await tkc.collect({ client: c, cfg: CFG.stores.teknosa, scope: CFG.scope, now: T1 });
   assert.equal(r.status, 'ok');
   assert.equal(r.items.length, 2);
-  assert.ok(c.calls.some((x) => x.params.query === 'samsung şarj adaptörü'));
-  assert.match(r.note, /samsung galaxy tab/);
+  assert.ok(c.calls.some((x) => x.params.query === 'şarj adaptörü'), 'saat araması boş dönse de adaptör araması yapılmalı');
+  assert.match(r.note, /akıllı saat/);
+});
+
+test('Teknosa tabletleri tablet KATEGORİSİNDEN çekilir; anahtar kelime aramalarında "samsung" geçmez (telefonlar öne geçer)', async () => {
+  const c = fakeClient(handlerFor({ tk: [TK.a57] }));
+  await tkc.collect({ client: c, cfg: CFG.stores.teknosa, scope: CFG.scope, now: T1 });
+  const tab = c.calls.find((x) => x.params.category === '116012');
+  assert.ok(tab, 'tablet kategorisi sorgulanmalı');
+  assert.equal(tab.params.seller, 'teknosa'); assert.equal(tab.params.brand, '2489');
+  for (const x of c.calls) if (x.params.query) assert.ok(!/samsung/i.test(x.params.query), 'Teknosa anahtar kelimesinde samsung olmamalı: ' + x.params.query);
 });
 
 test('geçici hata tek aramayı düşürür, diğerleri sürer (partial); yetki hatası ise her şeyi durdurur', async () => {
@@ -403,4 +424,130 @@ test('sayfalama yalnızca aramanın kendi kategorisine bakar: telefon araması t
   const cfg = { ...CFG.stores.mediamarkt, queries: [{ q: 'telefon', scope: 'phone', maxPages: 16 }] };
   await mmc.collect({ client: c, cfg, scope: ['phone', 'tablet'], now: T1 });
   assert.equal(c.calls.length, 2);
+});
+
+// ---------- Vatan ----------
+test('Vatan kabul kuralı: Samsung + stokta + vatanbilgisayar.com; outlet/yenilenmiş/başka marka/yanlış adres reddedilir', () => {
+  assert.equal(vtc.accept(VT.a37), null);
+  assert.equal(vtc.accept(VT.outlet), 'outlet-ikinci-el');
+  assert.equal(vtc.accept(VT.used), 'outlet-ikinci-el');
+  assert.equal(vtc.accept(VT.otherBrand), 'marka-samsung-degil');
+  assert.equal(vtc.accept(VT.badHost), 'url-gecersiz');
+  assert.equal(vtc.accept({ ...VT.a37, price: 0 }), 'fiyat-yok');
+});
+
+test('Vatan toplayıcı: fiyat = çevrimiçi fiyat; sepette fiyatı ayrı; Web\'e Özel etiketli; yalnızca stoktakiler istenir', async () => {
+  const c = fakeClient(handlerFor());
+  const r = await vtc.collect({ client: c, cfg: CFG.stores.vatan, scope: ['phone'], now: T1 });
+  assert.equal(r.status, 'ok');
+  assert.ok(c.calls.every((x) => x.engine === 'vatan' && x.params.brand === 'samsung' && x.params.in_stock_only === true));
+  const by = Object.fromEntries(r.items.map((i) => [i.mpn, i]));
+  assert.equal(by['SM-A376BZAGTUR'].price, 26999);
+  assert.equal(by['SM-A376BZAGTUR'].cartPrice, 24839);
+  assert.equal(by['SM-A376BZAGTUR'].webExclusive, false);
+  assert.equal(by['SM-A276BLICTUR'].webExclusive, true);
+  assert.equal(by['SM-A276BLICTUR'].listPrice, 21499);
+  assert.equal(by['SM-A276BLICTUR'].price, 18999);
+  assert.equal(by['SM-A176BZKDTUR'].cartPrice, null);
+  assert.ok(!by['SM-OUT000001'] && !by['SM-USED00001'] && !by['MYE23TU/A'] && !by['SM-HOST00001']);
+  assert.ok(r.items.every((i) => i.ean === null && i.ownKey && i.sellerCheck === 'site-tek-satici' && i.verified === true));
+});
+
+test('Vatan: boş arama sonucu aramayı atlar, yetki hatası mağazayı durdurur', async () => {
+  const base = handlerFor();
+  const c1 = fakeClient((e, p) => {
+    if (p.query === 'tablet') throw new ReefError('vatan/search: HTTP 200 vatanbilgisayar.com answered a page without a product grid', { status: 200 });
+    return base(e, p);
+  });
+  const r1 = await vtc.collect({ client: c1, cfg: CFG.stores.vatan, scope: CFG.scope, now: T1 });
+  assert.equal(r1.status, 'ok');
+  assert.match(r1.note, /tablet/);
+  assert.ok(c1.calls.some((x) => x.params.query === 'şarj adaptörü'));
+  const c2 = fakeClient(() => { throw new ReefError('vatan/search: HTTP 403 yetki', { status: 403 }); });
+  const r2 = await vtc.collect({ client: c2, cfg: CFG.stores.vatan, scope: CFG.scope, now: T1 });
+  assert.equal(r2.status, 'error');
+  assert.equal(c2.calls.length, 1);
+});
+
+// ---------- kanallar arası eşleştirme ----------
+const ean = (o) => ({ ch: 'mediamarkt', key: o.ean, ownKey: null, match: 'ean', ram: null, storage: null, color: null, mpn: null, name: o.label, ...o });
+const loose = (o) => ({ ch: 'vatan', ean: null, key: 'v:' + o.mpn.toLowerCase(), ownKey: 'v:' + o.mpn.toLowerCase(), match: 'baslik', name: o.label, ram: 8, storage: '256GB', ...o });
+
+test('eşleştirme: model adı özetinden renk/depolama/RAM/kod atılır', () => {
+  assert.deepEqual(modelParts('Galaxy A27 5G 8/256 GB Akıllı Telefon Açık Pembe'), { model: 'a27 5g', color: 'acik pembe' });
+  assert.deepEqual(modelParts('Samsung Galaxy S25 FE 5G 8/256 Gb Lacivert SM-S731BDBGTUR'), { model: 's25 fe 5g', color: 'lacivert' });
+});
+
+test('eşleştirme: uzun model kodu tek EAN grubunda geçiyorsa bağlanır', () => {
+  const a = ean({ ean: '8806099111111', cat: 'tablet', label: 'Galaxy Tab S10 FE+ Tablet', name: 'Samsung Galaxy Tab S10 FE+ (SM-X620NZSPTU) 12/256 GB', ram: 12, storage: '256GB' });
+  const v = loose({ cat: 'tablet', label: 'Galaxy Tab S10 FE+ Tablet', mpn: 'SM-X620NZSPTU', ram: null, storage: null });
+  assert.equal(linkItems([a, v]), 1);
+  assert.equal(v.key, a.key); assert.equal(v.match, 'model'); assert.equal(v.ownKey, 'v:sm-x620nzsptu');
+});
+
+test('eşleştirme: birebir model+depolama+renk eşitliği bağlar; farklı renk/depolama/RAM bağlamaz', () => {
+  const a = ean({ ean: '8806099222222', cat: 'phone', label: 'Galaxy A27 5G 8/256 GB Siyah', ram: 8, storage: '256GB' });
+  const same = loose({ cat: 'phone', label: 'Galaxy A27 5G 8/256 GB Akıllı Telefon Siyah', mpn: 'SM-A276BZKCTUR' });
+  const color = loose({ cat: 'phone', label: 'Galaxy A27 5G 8/256 GB Akıllı Telefon Açık Pembe', mpn: 'SM-A276BLICTUR' });
+  const stor = loose({ cat: 'phone', label: 'Galaxy A27 5G 8/128 GB Akıllı Telefon Siyah', mpn: 'SM-A276BZKBTUR', storage: '128GB' });
+  const ram = loose({ cat: 'phone', label: 'Galaxy A27 5G 12/256 GB Akıllı Telefon Siyah', mpn: 'SM-A276BZKDTUR', ram: 12 });
+  assert.equal(linkItems([a, same, color, stor, ram]), 1);
+  assert.equal(same.key, a.key);
+  for (const x of [color, stor, ram]) { assert.equal(x.key, x.ownKey); assert.equal(x.match, 'baslik'); }
+});
+
+test('eşleştirme: belirsizlikte bağlanmaz (iki farklı EAN aynı özellik; aynı kanalda iki aday; kanal zaten o ürünü taşıyor)', () => {
+  const a1 = ean({ ean: '8806099333331', cat: 'phone', label: 'Galaxy A27 5G 8/256 GB Siyah', ram: 8, storage: '256GB' });
+  const a2 = ean({ ean: '8806099333332', cat: 'phone', label: 'Galaxy A27 5G 8/256 GB Siyah', ram: 8, storage: '256GB', ch: 'teknosa' });
+  const v1 = loose({ cat: 'phone', label: 'Galaxy A27 5G 8/256 GB Siyah', mpn: 'SM-A276BZKCTUR' });
+  assert.equal(linkItems([a1, a2, v1]), 0);
+  assert.equal(v1.key, v1.ownKey);
+  const b = ean({ ean: '8806099444441', cat: 'phone', label: 'Galaxy A37 5G 8/256 GB Antrasit', ram: 8, storage: '256GB' });
+  const w1 = loose({ cat: 'phone', label: 'Galaxy A37 5G 8/256 GB Antrasit', mpn: 'SM-A376BZAGTUR' });
+  const w2 = loose({ cat: 'phone', label: 'Galaxy A37 5G 8/256 GB Antrasit Akıllı Telefon', mpn: 'SM-A376BZAHTUR' });
+  assert.equal(linkItems([b, w1, w2]), 0, 'aynı kanalda iki aday: ikisi de bağlanmaz');
+  const c = ean({ ean: '8806099555551', cat: 'phone', label: 'Galaxy S25 FE 5G 8/256 GB Lacivert', ram: 8, storage: '256GB' });
+  const own = ean({ ean: '8806099555551', ch: 'vatan', cat: 'phone', label: 'Galaxy S25 FE 5G 8/256 GB Lacivert', ram: 8, storage: '256GB' });
+  const x = loose({ cat: 'phone', label: 'Galaxy S25 FE 5G 8/256 GB Lacivert', mpn: 'SM-S731BDBGTUR' });
+  assert.equal(linkItems([c, own, x]), 0, 'Vatan zaten bu ürünü EAN ile taşıyor');
+});
+
+test('eşleştirme: tekrar çalıştırmak idempotent; bağ koparsa kayıt kendi kimliğine döner', () => {
+  const a = ean({ ean: '8806099666661', cat: 'phone', label: 'Galaxy A27 5G 8/256 GB Siyah', ram: 8, storage: '256GB' });
+  const v = loose({ cat: 'phone', label: 'Galaxy A27 5G 8/256 GB Siyah', mpn: 'SM-A276BZKCTUR' });
+  assert.equal(linkItems([a, v]), 1);
+  assert.equal(linkItems([a, v]), 1);
+  assert.equal(v.key, a.key);
+  assert.equal(linkItems([v]), 0);
+  assert.equal(v.key, v.ownKey); assert.equal(v.match, 'baslik');
+});
+
+test('uçtan uca: Vatan kaydı MediaMarkt/Teknosa ile aynı gruba bağlanırsa tek satırda karşılaştırılır', async () => {
+  const dir = tmp();
+  // MM A37 Antrasit 8/256 ile aynı ürünün Vatan kaydı
+  const out = await run({ makeClient: mk(handlerFor()), cfg: CFG, dir, now: T1, log: () => {} });
+  assert.equal(out.wrote, true, JSON.stringify(out.problems));
+  const feed = JSON.parse(fs.readFileSync(path.join(dir, 'data/prices.json'), 'utf8'));
+  const groups = new Map();
+  for (const i of feed.items) { if (!groups.has(i.key)) groups.set(i.key, new Set()); groups.get(i.key).add(i.ch); }
+  for (const [k, set] of groups) assert.ok([...set].length === set.size && [...set].every((c) => ['vatan', 'mediamarkt', 'teknosa'].includes(c)), k);
+  // hiçbir grupta bir kanal iki kez yer almaz
+  const seen = new Set();
+  for (const i of feed.items) { const id = i.ch + '|' + i.key; assert.ok(!seen.has(id), 'yinelenen: ' + id); seen.add(id); }
+  assert.ok(feed.sites.vatan.count > 0);
+});
+
+test('kredi tavanı (Vatan dâhil): en kötü tur ve gün sınırları aşmaz; gerçek tur tavanı aşmaz', async () => {
+  let worst = 0;
+  for (const st of Object.values(CFG.stores)) {
+    if (!st.enabled) continue;
+    for (const q of st.queries) if (CFG.scope.includes(q.scope)) worst += q.maxPages * st.creditsPerCall;
+  }
+  assert.ok(worst <= CFG.limits.maxCreditsPerRun, `en kötü tur ${worst}`);
+  assert.ok(worst * CFG.limits.maxRunsPerDay <= CFG.limits.maxCreditsPerDay, `en kötü gün ${worst * CFG.limits.maxRunsPerDay}`);
+  const client = fakeClient(handlerFor());
+  const dir = tmp();
+  await run({ makeClient: () => client, cfg: CFG, dir, now: T1, log: () => {} });
+  assert.ok(client.spent <= CFG.limits.maxCreditsPerRun, `gerçek tur ${client.spent}`);
+  assert.deepEqual(CFG.channelOrder, ['vatan', 'mediamarkt', 'teknosa']);
 });

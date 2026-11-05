@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  actions: write   # zamanlayıcının 60 gün hareketsizlikten kapanmasını önlemek için (aşağıdaki 'Canlı tut' adımı)
 
 concurrency:
   group: fiyat
@@ -40,3 +41,11 @@ jobs:
           git config user.email "mapp-fiyat-bot@users.noreply.github.com"
           git add data/
           git diff --cached --quiet || { git commit -m "Fiyatlar güncellendi" && git push; }
+      - name: Zamanlayıcıyı canlı tut
+        # GitHub, herkese açık depoda 60 gün etkinlik olmazsa zamanlanmış çalışmaları kapatır.
+        # Bu adım her turda iş akışını "etkinleştir" API'siyle yeniler; sayaç sıfırlanır. Başarısız olsa bile tur sonucu bozulmaz.
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/fiyat.yml/enable"

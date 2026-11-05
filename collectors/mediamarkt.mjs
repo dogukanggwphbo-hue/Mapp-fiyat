@@ -1,5 +1,5 @@
 // MediaMarkt TR toplayıcı. Kabul kuralı: seller.type === 'retailer' (pazaryeri satıcıları kesinlikle alınmaz).
-import { buildItem, classify, isWebExclusive } from '../lib/normalize.mjs';
+import { buildItem, classify, isWebExclusive, USED_RE } from '../lib/normalize.mjs';
 import { validateItem, SELLER_CHECK } from '../lib/validate.mjs';
 import { BudgetError, isEmptyResult, isFatal } from '../lib/reef.mjs';
 
@@ -30,6 +30,7 @@ export function accept(row) {
   if (row.seller.type !== 'retailer') return 'pazaryeri-satici';
   if (row.seller.name && !/media\s*markt/i.test(row.seller.name)) return 'satici-adi-uyusmuyor';
   if (!/^samsung$/i.test(String(row.brand || '').trim())) return 'marka-samsung-degil';
+  if (USED_RE.test(String(row.title || ''))) return 'outlet-ikinci-el';
   if (row.refurbished === true) return 'yenilenmis';
   const sp = shelfPrice(row);
   if (sp.reject) return sp.reject;

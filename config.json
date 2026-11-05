@@ -1,5 +1,5 @@
 {
-  "_not": "Kapsam: GSM telefon + tablet + akıllı saat/kulaklık + şarj adaptörü. Beyaz eşya/TV/aksesuar yok. Daraltmak için 'scope' listesinden çıkarın (kredi harcaması düşer).",
+  "_not": "Kapsam: GSM telefon + tablet + akıllı saat/kulaklık + şarj adaptörü (beyaz eşya/TV/kılıf yok). Daraltmak için 'scope' listesinden çıkarın. Arama metinlerinde marka sözcüğü yok: marka filtresi (brand) zaten Samsung'a daraltır.",
   "scope": [
     "phone",
     "tablet",
@@ -9,8 +9,8 @@
   "tz": "Europe/Istanbul",
   "limits": {
     "maxRunsPerDay": 2,
-    "maxCreditsPerRun": 70,
-    "maxCreditsPerDay": 140,
+    "maxCreditsPerRun": 90,
+    "maxCreditsPerDay": 180,
     "retainDays": 3,
     "maxPriceGap": 1.5
   },
@@ -27,22 +27,22 @@
           "maxPages": 5
         },
         {
-          "q": "samsung galaxy tab",
+          "category": "116012",
           "scope": "tablet",
-          "maxPages": 2
+          "maxPages": 3
         },
         {
-          "q": "samsung galaxy watch",
+          "q": "akıllı saat",
           "scope": "wearable",
           "maxPages": 1
         },
         {
-          "q": "samsung galaxy buds",
+          "q": "kulaklık",
           "scope": "wearable",
           "maxPages": 1
         },
         {
-          "q": "samsung şarj adaptörü",
+          "q": "şarj adaptörü",
           "scope": "adapter",
           "maxPages": 2
         }
@@ -70,7 +70,7 @@
           "maxPages": 2
         },
         {
-          "q": "samsung galaxy buds",
+          "q": "samsung kulaklık",
           "scope": "wearable",
           "maxPages": 2
         },
@@ -82,8 +82,43 @@
       ]
     },
     "vatan": {
-      "enabled": false,
-      "reason": "Vatan API yanıtında satıcı alanı yok; ürünün mağazanın kendi satışı olduğu doğrulanamadığı için toplanmıyor."
+      "enabled": true,
+      "brand": "samsung",
+      "inStockOnly": true,
+      "creditsPerCall": 1,
+      "note": "Vatan'da pazaryeri yok; kendi satışı. Güvenceler collectors/vatan.mjs başında.",
+      "queries": [
+        {
+          "q": "samsung galaxy akıllı telefon",
+          "scope": "phone",
+          "maxPages": 5
+        },
+        {
+          "q": "tablet",
+          "scope": "tablet",
+          "maxPages": 2
+        },
+        {
+          "q": "akıllı saat",
+          "scope": "wearable",
+          "maxPages": 1
+        },
+        {
+          "q": "kulaklık",
+          "scope": "wearable",
+          "maxPages": 1
+        },
+        {
+          "q": "şarj adaptörü",
+          "scope": "adapter",
+          "maxPages": 2
+        }
+      ]
     }
-  }
+  },
+  "channelOrder": [
+    "vatan",
+    "mediamarkt",
+    "teknosa"
+  ]
 }

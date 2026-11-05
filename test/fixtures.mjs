@@ -59,6 +59,25 @@ export const TK = {
 };
 
 /** Sahte ReefAPI istemcisi: handler(engine, params) → data nesnesi; kredi ve sınır gerçek istemci gibi işler. */
+
+// Vatan: ReefAPI canlı yanıtından (2026-11-05, vatan/search) alınan gerçek satırlar; 'SENTETİK' işaretliler eklenmiştir.
+const vtBase = (o) => ({ position: 1, slug: 'x.html', product_code: 'SM-X', title: '', url: 'https://www.vatanbilgisayar.com/x.html', image: '', images: [], price: 1000, currency: 'TRY', regular_price: null, price_label: null, price_note: null, was_price: null, discount_percent: null, discount_amount: null, basket_price: null, basket_price_label: null, rating_rounded: null, lowest_price_note: null, web_exclusive_badge: null, color_options: null, color_options_out_of_stock: null, is_outlet: null, badge_images: [], ...o });
+const vtUrl = (s) => `https://www.vatanbilgisayar.com/${s}.html`;
+export const VT = {
+  a37: vtBase({ product_code: 'SM-A376BZAGTUR', slug: 'samsung-galaxy-a37-5g-8-256-gb-akilli-telefon.html', title: 'Samsung Galaxy A37 5G 8/256 GB Akıllı Telefon Antrasit', url: vtUrl('samsung-galaxy-a37-5g-8-256-gb-akilli-telefon'), price: 26999, basket_price: 24839, basket_price_label: "Gece'ye özel sepette" }),
+  a27: vtBase({ product_code: 'SM-A276BZKCTUR', slug: 'samsung-galaxy-a27-5g-8-256-gb-akilli-telefon.html', title: 'Samsung Galaxy A27 5G 8/256 GB Akıllı Telefon Siyah', url: vtUrl('samsung-galaxy-a27-5g-8-256-gb-akilli-telefon'), price: 21499, basket_price: 19779, basket_price_label: "Gece'ye özel sepette" }),
+  a27pembe: vtBase({ product_code: 'SM-A276BLICTUR', slug: 'samsung-galaxy-a27-5g-8-256-gb-akilli-telefon-acik-pembe.html', title: 'Samsung Galaxy A27 5G 8/256 GB Akıllı Telefon Açık Pembe', url: vtUrl('samsung-galaxy-a27-5g-8-256-gb-akilli-telefon-acik-pembe'), price: 18999, regular_price: 21499, price_label: "Web'e Özel", price_note: 'Son 28 Ürün' }),
+  a17: vtBase({ product_code: 'SM-A176BZKDTUR', slug: 'samsung-galaxy-a17-8-256-gb-akilli-telefon-siyah.html', title: 'Samsung Galaxy A17 5G 8/256 Gb Akıllı Telefon Siyah', url: vtUrl('samsung-galaxy-a17-8-256-gb-akilli-telefon-siyah'), price: 18199 }),
+  s25fe: vtBase({ product_code: 'SM-S731BDBGTUR', slug: 'samsung-galaxy-s25-fe-8-256-gb-akilli-telefon-lacivert.html', title: 'Samsung Galaxy S25 FE 5G 8/256 Gb Akıllı Telefon Lacivert', url: vtUrl('samsung-galaxy-s25-fe-8-256-gb-akilli-telefon-lacivert'), price: 38949 }),
+  // SENTETİK: MediaMarkt başlığındaki uzun model koduyla (SM-X620NZSPTU) eşleşir
+  tabByCode: vtBase({ product_code: 'SM-X620NZSPTU', slug: 'samsung-galaxy-tab-s10-fe-plus.html', title: 'Samsung Galaxy Tab S10 FE+ Tablet', url: vtUrl('samsung-galaxy-tab-s10-fe-plus'), price: 38999 }),
+  // SENTETİK: reddedilmesi gerekenler
+  outlet: vtBase({ product_code: 'SM-OUT000001', slug: 'o.html', title: 'Samsung Galaxy S24 128 GB Akıllı Telefon Siyah', url: vtUrl('o'), price: 20000, is_outlet: true }),
+  used: vtBase({ product_code: 'SM-USED00001', slug: 'u.html', title: 'Samsung Galaxy S23 256 GB Yenilenmiş Akıllı Telefon', url: vtUrl('u'), price: 18000 }),
+  otherBrand: vtBase({ product_code: 'MYE23TU/A', slug: 'i.html', title: 'Apple iPhone 17 256 GB Akıllı Telefon Siyah', url: vtUrl('i'), price: 70000 }),
+  badHost: vtBase({ product_code: 'SM-HOST00001', slug: 'h.html', title: 'Samsung Galaxy A57 5G 8/256 GB Akıllı Telefon Gri', url: 'https://baska-site.com/h', price: 30000 }),
+};
+
 export function fakeClient(handler, { max = Infinity } = {}) {
   const st = { spent: 0, calls: [] };
   return {

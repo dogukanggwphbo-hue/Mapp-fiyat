@@ -1,6 +1,6 @@
 // Teknosa toplayıcı. Kabul kuralı: seller.is_teknosa === true (marketplace mağazaları kesinlikle alınmaz).
 // İstek ayrıca seller=teknosa ve Samsung marka kodu ile daraltılır; kural yine de her satırda tekrar doğrulanır.
-import { buildItem, classify, isWebExclusive } from '../lib/normalize.mjs';
+import { buildItem, classify, isWebExclusive, USED_RE } from '../lib/normalize.mjs';
 import { validateItem, SELLER_CHECK } from '../lib/validate.mjs';
 import { BudgetError, ReefError, isEmptyResult, isFatal } from '../lib/reef.mjs';
 
@@ -11,6 +11,7 @@ export function accept(row) {
   if (row.seller.is_teknosa !== true) return 'pazaryeri-satici';
   if (row.seller.name && !/teknosa/i.test(row.seller.name)) return 'satici-adi-uyusmuyor';
   if (!/^samsung$/i.test(String(row.brand || '').trim())) return 'marka-samsung-degil';
+  if (USED_RE.test(String(row.title || ''))) return 'outlet-ikinci-el';
   if (!(typeof row.price === 'number' && row.price > 0)) return 'fiyat-yok';
   if (!row.url || !/^https:\/\/(www\.)?teknosa\.com\//.test(row.url)) return 'url-gecersiz';
   return null;

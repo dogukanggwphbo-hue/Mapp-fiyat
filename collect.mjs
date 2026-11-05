@@ -4,7 +4,8 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createClient } from './lib/reef.mjs';
 import { readJson, writeJson, istDay, runsToday, mergeItems, flagOutliers } from './lib/store.mjs';
-import { validateFeed, CATS } from './lib/validate.mjs';
+import { validateFeed, CATS, CHANNEL_NAMES, CAT_LABELS } from './lib/validate.mjs';
+import { linkItems } from './lib/link.mjs';
 import * as teknosa from './collectors/teknosa.mjs';
 import * as mediamarkt from './collectors/mediamarkt.mjs';
 import * as vatan from './collectors/vatan.mjs';
@@ -45,7 +46,7 @@ export async function run({ makeClient, cfg, dir, now = new Date(), force = fals
   for (const c of COLLECTORS) {
     const sc = cfg.stores[c.STORE] || { enabled: false };
     let res;
-    if (c.STORE !== 'vatan' && !sc.enabled) {
+    if (!sc.enabled) {
       res = { store: c.STORE, status: 'off', items: [], stats: { pages: 0, rows: 0, accepted: 0, rejected: {}, credits: 0 }, error: null, note: 'Kapalı.' };
     } else {
       try { res = await c.collect({ client, cfg: sc, scope, now }); }
@@ -74,7 +75,9 @@ export async function run({ makeClient, cfg, dir, now = new Date(), force = fals
       (Object.keys(res.stats.rejected).length ? ' · elenen: ' + JSON.stringify(res.stats.rejected) : '') + (res.error ? ' · HATA: ' + res.error : '') + (res.note ? ' · ' + res.note : ''));
   }
 
-  // 3) Aykırı fark işareti, sıralama, doğrulama
+  // 3) Kanallar arası eşleştirme (barkodsuz kayıtlar), aykırı fark işareti, sıralama, doğrulama
+  const nLink = linkItems(items);
+  if (nLink) log(`${nLink} barkodsuz kayıt model kodu/özellik eşitliğiyle başka kanaldaki ürüne bağlandı.`);
   const nOut = flagOutliers(items, L.maxPriceGap);
   if (nOut) log(`${nOut} üründe kanallar arası fark ${L.maxPriceGap}x'ten büyük: 'kontrol gerekli' işaretlendi.`);
   items.sort((a, b) => a.cat.localeCompare(b.cat) || a.label.localeCompare(b.label, 'tr') || ORDER[a.ch] - ORDER[b.ch]);
@@ -82,6 +85,9 @@ export async function run({ makeClient, cfg, dir, now = new Date(), force = fals
     schema: 2,
     updated: anyFresh ? nowIso : prev.updated,
     cats: scope,
+    // Uygulama kanal/kategori adlarını ve sırasını buradan okur: yeni kanal/kategori eklemek HTML değişikliği gerektirmez.
+    channels: (cfg.channelOrder || Object.keys(CHANNEL_NAMES)).filter((id) => CHANNEL_NAMES[id] && (cfg.stores[id] || {}).enabled).map((id) => ({ id, name: CHANNEL_NAMES[id] })),
+    catLabels: Object.fromEntries(scope.map((k) => [k, CAT_LABELS[k] || k])),
     sites,
     items,
     run: { ...runInfo, credits: client.spent },

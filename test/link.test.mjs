@@ -157,7 +157,7 @@ test('önbellek: önceki turdan kalan yenilenmiş / outlet kayıt artık tutulma
   assert.deepEqual(out.map((i) => i.key), ['b']);
 });
 
-test('günlük tur hakkı: elle başlatılan (force) deneme turu 10:00 / 14:30 turlarının hakkından düşmez', async () => {
+test('günlük tur hakkı: elle başlatılan (force) deneme turu 14:00 turunun hakkından düşmez', async () => {
   const { runsToday } = await import('../lib/store.mjs');
   const now = new Date('2026-11-06T08:00:00Z');
   const state = { runs: [
@@ -217,34 +217,31 @@ test('saat/kulaklık: "SiyahKablolu" gibi yapışık yazımda renk ayrıştırı
   assert.ok(same(t, m)); assert.notEqual(b.key, t.key);
 });
 
-test('yedek zamanlar: son 2 saatte başarılı tur varsa yedek tur atlanır; ikinci asıl tur (4,5 saat sonra) atlanmaz; elle (force) ya da başarısız tur sayılmaz', async () => {
+test('yedek zamanlar: son 6 saatte başarılı tur varsa yedek ya da geç kalan tur atlanır; ertesi gün çalışır; elle (force) ya da başarısız tur sayılmaz', async () => {
   const { recentRun } = await import('../lib/store.mjs');
   const st = (runs) => ({ runs });
-  const G = 2; // config.json > limits.minGapHours
-  const sabah = { at: '2026-11-07T06:57:00Z', credits: 70, ok: true, force: false }; // 09:57 TR (10:00 turu)
-  assert.equal(recentRun(st([sabah]), new Date('2026-11-07T07:25:00Z'), G), true);   // 10:25 yedek, asıl tur çalışmış → atla
-  assert.equal(recentRun(st([sabah]), new Date('2026-11-07T11:25:00Z'), G), false);  // 14:25 öğlen turu (4,5 saat sonra) → çalışır
-  assert.equal(recentRun(st([sabah]), new Date('2026-11-07T11:55:00Z'), G), false);  // 14:55 yedek, öğlen turu henüz yok → çalışır
-  assert.equal(recentRun(st([]), new Date('2026-11-07T07:25:00Z'), G), false);       // asıl tur hiç çalışmadı → yedek çalışır
-  assert.equal(recentRun(st([{ ...sabah, ok: false }]), new Date('2026-11-07T07:25:00Z'), G), false); // asıl tur başarısızdı → yedek dener
-  assert.equal(recentRun(st([{ ...sabah, force: true }]), new Date('2026-11-07T07:25:00Z'), G), false); // elle tur hakkı yemez
-  const ogle = { at: '2026-11-07T11:27:00Z', credits: 70, ok: true, force: false };
-  assert.equal(recentRun(st([sabah, ogle]), new Date('2026-11-07T11:55:00Z'), G), true);  // öğlen yedeği atlanır
-  // sabah turu GitHub'da 1,5 saat gecikse bile (11:30 TR'de bitse) öğlen turu atlanmaz
-  const gec = { at: '2026-11-07T08:30:00Z', credits: 70, ok: true, force: false };
-  assert.equal(recentRun(st([gec]), new Date('2026-11-07T11:25:00Z'), G), false);
+  const G = 6; // config.json > limits.minGapHours
+  const asil = { at: '2026-11-07T10:57:00Z', credits: 70, ok: true, force: false }; // 13:57 TR (14:00 turu)
+  assert.equal(recentRun(st([asil]), new Date('2026-11-07T11:25:00Z'), G), true);    // 14:25 yedek, asıl tur çalışmış → atla
+  assert.equal(recentRun(st([asil]), new Date('2026-11-08T10:55:00Z'), G), false);   // ertesi gün 13:55 turu → çalışır
+  assert.equal(recentRun(st([]), new Date('2026-11-07T11:25:00Z'), G), false);       // asıl tur hiç çalışmadı → yedek çalışır
+  assert.equal(recentRun(st([{ ...asil, ok: false }]), new Date('2026-11-07T11:25:00Z'), G), false); // asıl tur başarısızdı → yedek dener
+  assert.equal(recentRun(st([{ ...asil, force: true }]), new Date('2026-11-07T11:25:00Z'), G), false); // elle tur hakkı yemez
+  // yedek çalıştı, GitHub'da geciken asıl tur 1,5 saat sonra başlarsa tekrar kredi harcamaz
+  const yedek = { at: '2026-11-07T11:26:00Z', credits: 70, ok: true, force: false };
+  assert.equal(recentRun(st([yedek]), new Date('2026-11-07T12:30:00Z'), G), true);
 });
 
-test('zamanlama: iş akışı 09:55 / 10:25 / 14:25 / 14:55 (Türkiye) saatlerinde çalışır; yedekler asıl turdan 30 dk sonradır', async () => {
+test('zamanlama: iş akışı günde 1 tur: 13:55 (14:00 turu) ve 14:25 (14:30 yedek) Türkiye saatinde; yedek asıl turdan 30 dk sonradır', async () => {
   const fs = await import('node:fs');
   const yml = fs.readFileSync(new URL('../.github/workflows/fiyat.yml', import.meta.url), 'utf8');
   const crons = [...yml.matchAll(/^\s*-\s*cron:\s*'(\d+)\s+(\d+)\s+\*\s+\*\s+\*'/gm)].map((m) => ({ min: Number(m[1]), hr: Number(m[2]) }));
   const tr = crons.map((c) => `${String((c.hr + 3) % 24).padStart(2, '0')}:${String(c.min).padStart(2, '0')}`);
-  assert.deepEqual(tr, ['09:55', '10:25', '14:25', '14:55']);
+  assert.deepEqual(tr, ['13:55', '14:25']);
   const cfg = JSON.parse(fs.readFileSync(new URL('../config.json', import.meta.url), 'utf8'));
-  assert.equal(cfg.limits.minGapHours, 2);
-  // iki asıl tur arası (4,5 saat) minGapHours'tan büyük, yedek (30 dk) küçük olmalı
-  assert.ok(cfg.limits.minGapHours * 60 > 30 && cfg.limits.minGapHours * 60 < 270);
+  assert.equal(cfg.limits.minGapHours, 6);
+  // yedek atlama süresi 30 dk yedek aralığından büyük, ertesi günkü turdan küçük olmalı
+  assert.ok(cfg.limits.minGapHours * 60 > 30 && cfg.limits.minGapHours <= 12);
 });
 
 test("fiyat geçmişi: kampanya (Web'e Özel) fiyatı bitince prevWeb=true saklanır; fiyat değişmezse korunur; normal fiyat değişimi prevWeb=false", async () => {

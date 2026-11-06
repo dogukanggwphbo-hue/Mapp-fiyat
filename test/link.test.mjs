@@ -251,3 +251,83 @@ test("fiyat geçmişi: kampanya (Web'e Özel) fiyatı bitince prevWeb=true sakla
   out = mergeItems([], [base(5000)], t1, 3);
   assert.equal(out[0].prevWeb, undefined);
 });
+
+test('tablet: Teknosa "Navy" = Vatan/MediaMarkt "Mavi", Vatan "Red" = "Mercan" (aynı ürün, renk eşanlamlısı)', () => {
+  const t = E('teknosa', 'tablet', 'Samsung Galaxy Tab S10 FE+ 12/256 GB Navy Tablet - SM-X620', { storage: 256, ram: 12 });
+  const v = L('vatan', 'tablet', "Samsung Galaxy Tab S10 Fe+ 256Gb 12GB-13.1''Android Tablet SM-X620NLBPTUR Mavi", 'SM-X620NLBPTUR', { storage: 256, ram: 12 });
+  assert.ok(linkItems([t, v]) >= 1);
+  assert.ok(same(t, v));
+  assert.equal(v.ownKey, 'v:sm-x620nlbptur', 'kalıcı kimlik korunur');
+  const m = E('mediamarkt', 'tablet', 'SAMSUNG Galaxy Tab S10 Lite 6/128 GB Tablet Mercan', { storage: 128, ram: 6 });
+  const k = L('vatan', 'tablet', "Samsung Galaxy Tab S10 Lite 2Ghz 128Gb 6Gb 10.9''Android Tablet Red", 'SM-X400NZRRTUR', { storage: 128, ram: 6 });
+  linkItems([m, k]);
+  assert.ok(same(m, k));
+});
+
+test('telefon: lacivert ile mavi AYRI renktir (yalnız tablette eşanlamlı); Navy/Icy Blue karışmaz', () => {
+  const n = E('teknosa', 'phone', 'Samsung Galaxy S25 FE 5G 8/256GB Navy Akıllı Telefon', { storage: 256, ram: 8 });
+  const b = E('mediamarkt', 'phone', 'SAMSUNG Galaxy S25 FE 5G 8/256GB Akıllı Telefon Mavi', { storage: 256, ram: 8 });
+  assert.equal(linkItems([n, b]), 0);
+  assert.notEqual(n.key, b.key);
+});
+
+test('renk ailesi: barkodsuz Vatan "Açık Pembe / Çam Yeşili / Gök Mavisi" kaydı, ailede tek aday olan "Pembe / Yeşil / Mavi" ile bağlanır', () => {
+  const t = E('teknosa', 'phone', 'Samsung Galaxy A27 5G 8GB RAM 256GB Pembe Akıllı Telefon', { storage: 256, ram: 8 });
+  const v = L('vatan', 'phone', 'Samsung Galaxy A27 5G 8/256 GB Akıllı Telefon Açık Pembe', 'SM-A276BLICTUR', { storage: 256, ram: 8 });
+  assert.equal(linkItems([t, v]), 1);
+  assert.ok(same(t, v));
+  assert.equal(v.match, 'model');
+  assert.equal(v.ownKey, 'v:sm-a276blictur', 'kalıcı kimlik korunur');
+  const t2 = E('teknosa', 'phone', 'Samsung Galaxy S26 Ultra 5G 12/512GB Mavi Akıllı Telefon', { storage: 512, ram: 12 });
+  const v2 = L('vatan', 'phone', 'Samsung Galaxy S26 Ultra 5G 12/512 Gb Akıllı Telefon Gök Mavisi', 'SM-S948BLBGTUR', { storage: 512, ram: 12 });
+  linkItems([t2, v2]);
+  assert.ok(same(t2, v2));
+  // renk sözcüğü ters yönde de çalışır: barkodlu kayıtta "Kobalt Siyah", barkodsuzda "Siyah"
+  const m3 = E('mediamarkt', 'phone', 'SAMSUNG Galaxy S26 Ultra 5G 16GB/1TB Akıllı Telefon Kobalt Siyah', { storage: 1024, ram: 16 });
+  const v3 = L('vatan', 'phone', 'Samsung Galaxy S26 Ultra 5G 16/1 TB Akıllı Telefon Siyah', 'SM-S948BZKHTUR', { storage: 1024, ram: 16 });
+  linkItems([m3, v3]);
+  assert.ok(same(m3, v3));
+});
+
+test('renk ailesi: belirsizlikte (ailede birden fazla aday) ya da kapsamayan renklerde (açık mavi / koyu mavi) bağlanmaz', () => {
+  // Vatan "Mavi" için iki ayrı mavi tonu var: hangisi olduğu belli değil -> bağlama
+  const a = E('teknosa', 'phone', 'Samsung Galaxy A37 5G 8/256GB Açık Mavi Akıllı Telefon', { storage: 256, ram: 8 });
+  const b = E('mediamarkt', 'phone', 'SAMSUNG Galaxy A37 5G 8/256GB Akıllı Telefon Koyu Mavi', { storage: 256, ram: 8 });
+  const v = L('vatan', 'phone', 'Samsung Galaxy A37 5G 8/256 GB Akıllı Telefon Mavi', 'SM-A376BMVGTUR', { storage: 256, ram: 8 });
+  assert.equal(linkItems([a, b, v]), 0);
+  assert.ok(new Set([a.key, b.key, v.key]).size === 3);
+  // açık mavi ile koyu mavi birbirini kapsamaz
+  const c = E('teknosa', 'phone', 'Samsung Galaxy A37 5G 8/256GB Açık Mavi Akıllı Telefon', { storage: 256, ram: 8 });
+  const d = L('vatan', 'phone', 'Samsung Galaxy A37 5G 8/256 GB Akıllı Telefon Koyu Mavi', 'SM-A376BDBGTUR', { storage: 256, ram: 8 });
+  assert.equal(linkItems([c, d]), 0);
+});
+
+test('renk ailesi: iki ayrı barkodlu ürün birleştirilmez; RAM / depolama / model çelişkisinde bağlanmaz', () => {
+  const x = E('teknosa', 'phone', 'Samsung Galaxy A37 5G 8/256GB Pembe Akıllı Telefon', { storage: 256, ram: 8 });
+  const y = E('mediamarkt', 'phone', 'SAMSUNG Galaxy A37 8/256GB Akıllı Telefon Açık Pembe', { storage: 256, ram: 8 });
+  assert.equal(linkItems([x, y]), 0, 'iki barkodlu kayıt: farklı ürün olabilir');
+  const t = E('teknosa', 'phone', 'Samsung Galaxy A27 5G 8GB RAM 256GB Pembe Akıllı Telefon', { storage: 256, ram: 8 });
+  const v = L('vatan', 'phone', 'Samsung Galaxy A27 5G 6/256 GB Akıllı Telefon Açık Pembe', 'SM-A276BLIETUR', { storage: 256, ram: 6 });
+  assert.equal(linkItems([t, v]), 0, 'RAM çelişkisi');
+  const t5 = E('teknosa', 'phone', 'Samsung Galaxy A27 5G 8GB RAM 256GB Pembe Akıllı Telefon', { storage: 256, ram: 8 });
+  const v5 = L('vatan', 'phone', 'Samsung Galaxy A27 5G 8/128 GB Akıllı Telefon Açık Pembe', 'SM-A276BLIDTUR', { storage: 128, ram: 8 });
+  assert.equal(linkItems([t5, v5]), 0, 'depolama çelişkisi');
+  const o = E('teknosa', 'phone', 'Samsung Galaxy A37 5G 8/256GB Pembe Akıllı Telefon', { storage: 256, ram: 8 });
+  const w = L('vatan', 'phone', 'Samsung Galaxy A27 5G 8/256 GB Akıllı Telefon Açık Pembe', 'SM-A276BLICTUR', { storage: 256, ram: 8 });
+  assert.equal(linkItems([o, w]), 0, 'farklı model');
+});
+
+test('renk ailesi: aynı kanalda iki aday varsa bağlanmaz; tekrar çalıştırmak sonucu değiştirmez (idempotent)', () => {
+  const t = E('teknosa', 'phone', 'Samsung Galaxy A27 5G 8GB RAM 256GB Pembe Akıllı Telefon', { storage: 256, ram: 8 });
+  const v = L('vatan', 'phone', 'Samsung Galaxy A27 5G 8/256 GB Akıllı Telefon Açık Pembe', 'SM-A276BLICTUR', { storage: 256, ram: 8 });
+  const t2 = E('teknosa', 'phone', 'Samsung Galaxy A27 5G 8GB RAM 256GB Pembe Akıllı Telefon', { storage: 256, ram: 8 });
+  assert.equal(linkItems([t, t2, v]), 0, 'Teknosa tarafında aynı renkte iki farklı ürün: belirsiz');
+  const t3 = E('teknosa', 'phone', 'Samsung Galaxy A27 5G 8GB RAM 256GB Pembe Akıllı Telefon', { storage: 256, ram: 8 });
+  const v3 = L('vatan', 'phone', 'Samsung Galaxy A27 5G 8/256 GB Akıllı Telefon Açık Pembe', 'SM-A276BLICTUR', { storage: 256, ram: 8 });
+  const items = [t3, v3];
+  linkItems(items);
+  const k1 = items.map((i) => i.key).join();
+  linkItems(items);
+  assert.equal(items.map((i) => i.key).join(), k1);
+  assert.equal(v3.ownKey, 'v:sm-a276blictur');
+});

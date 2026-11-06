@@ -41,6 +41,11 @@ export function toFields(row) {
 
 const bump = (o, k) => { o[k] = (o[k] || 0) + 1; };
 
+// Sayfa tekrarı koruması: Teknosa / aracı katman zaman zaman 2. sayfa yerine 1. sayfanın aynısını döndürür (6 Kasım gecesi telefon listesinde
+// 18 ürün hiç görülmedi). Bir arama sayfasının yarısından fazlası aynı aramanın önceki sayfalarında görülmüşse sayfa yeniden istenir.
+// Arama başına en çok MAX_RETRY ek istek (kredi) harcanır; normal turlarda hiç harcanmaz.
+const MAX_RETRY = 2;
+
 export async function collect({ client, cfg, scope, now }) {
   const nowIso = now.toISOString();
   const stats = { pages: 0, rows: 0, accepted: 0, rejected: {}, credits: 0, empty: [] };
@@ -51,6 +56,10 @@ export async function collect({ client, cfg, scope, now }) {
   outer:
   for (const q of cfg.queries) {
     if (!scope.includes(q.scope)) continue;
+    const seen = new Set(); // bu aramada görülen ürün kimlikleri (satıcı / kategori fark etmeksizin)
+    let retries = 0;
+    let expected = 0; // Teknosa'nın bu arama için bildirdiği toplam ürün sayısı
+    let cappedQ = false;
     for (let page = 1; page <= q.maxPages; page++) {
       const params = { seller: cfg.seller, page };
       if (q.category) params.category = q.category; else params.query = q.q;
@@ -67,7 +76,14 @@ export async function collect({ client, cfg, scope, now }) {
       }
       const d = r.data || {};
       const rows = Array.isArray(d.results) ? d.results : [];
-      stats.pages++; stats.rows += rows.length;
+      stats.pages++;
+      const repeats = rows.filter((row) => row && seen.has(row.product_id)).length;
+      const repeated = page > 1 && rows.length > 0 && repeats * 2 > rows.length;
+      if (repeated && retries < MAX_RETRY) { retries++; stats.retries = (stats.retries || 0) + 1; page--; continue; } // aynı sayfayı yeniden iste
+      if (repeated) stats.repeated = (stats.repeated || 0) + 1; // yeniden denemeye rağmen tekrar: eksik kalabilir (aşağıda 'incomplete')
+      for (const row of rows) if (row && row.product_id != null) seen.add(row.product_id);
+      if (Number(d.total_results) > 0) expected = Number(d.total_results);
+      stats.rows += rows.length;
       let wanted = 0;
       let relevant = 0; // satıcı fark etmeksizin BU aramanın kategorisindeki Samsung ürünleri: sayfalamayı bitirme ölçütü
       for (const row of rows) {
@@ -84,9 +100,11 @@ export async function collect({ client, cfg, scope, now }) {
         stats.accepted++;
       }
       const last = Number(d.total_pages || 1);
-      if (page >= q.maxPages && page < last && relevant) stats.capped = true;
+      if (page >= q.maxPages && page < last && relevant) { stats.capped = true; cappedQ = true; }
       if (!rows.length || page >= last || !relevant) break;
     }
+    // Arama bitti: görülen benzersiz ürün sayısı Teknosa'nın bildirdiği toplamdan azsa (sayfa sınırından değilse) kaydet
+    if (!error && !cappedQ && expected && seen.size < expected) (stats.incomplete = stats.incomplete || []).push(`${q.category || q.q}: ${seen.size}/${expected}`);
   }
   stats.credits = client.spent - start;
   let status = 'ok';

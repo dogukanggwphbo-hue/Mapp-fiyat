@@ -579,3 +579,43 @@ test('eşleştirme: Vatan "12+256GB" yazımı MediaMarkt "12/256GB" ile bağlan�
   assert.deepEqual(modelParts('Galaxy Z Flip8 5G 12+256GB Grafit Gri'), modelParts('SAMSUNG Galaxy Z Flip8 5G 12/256GB Akıllı Telefon Grafit Gri'));
   assert.deepEqual(modelParts('Galaxy S26 Ultra 5G 16/1 TB Beyaz'), modelParts('Galaxy S26 Ultra 5G 16GB/1TB Beyaz'));
 });
+
+test('Teknosa sayfa tekrarı: 2. sayfa yerine 1. sayfa gelirse sayfa yeniden istenir, ürünler kaybolmaz', async () => {
+  const pages = { 1: [TK.a57], 2: [TK.a37], 3: [TK.a17] };
+  let n2 = 0;
+  const h = (engine, params) => {
+    const rows = params.page === 2 && ++n2 === 1 ? pages[1] : pages[params.page]; // ilk 2. sayfa isteği: 1. sayfanın aynısı
+    return { results: rows, total_pages: 3, total_results: 3 };
+  };
+  const c = fakeClient(h);
+  const r = await tkc.collect({ client: c, cfg: CFG.stores.teknosa, scope: ['phone'], now: T1 });
+  assert.deepEqual(c.calls.map((x) => x.params.page), [1, 2, 2, 3], '2. sayfa bir kez yeniden istenir');
+  assert.equal(r.stats.retries, 1);
+  assert.equal(r.stats.repeated, undefined);
+  assert.equal(r.stats.incomplete, undefined);
+  assert.deepEqual(r.items.map((i) => i.productId).sort(), ['100000058142', '100000062355', '100000062357']);
+  assert.equal(r.stats.credits, 4, 'yalnız 1 ek kredi');
+});
+
+test('Teknosa sayfa tekrarı: tekrar kalıcıysa en çok 2 kez denenir, eksik kayıt altına alınır (kredi sınırsız harcanmaz)', async () => {
+  const pages = { 1: [TK.a57], 3: [TK.a17] };
+  const h = (engine, params) => ({ results: pages[params.page] || pages[1], total_pages: 3, total_results: 3 }); // 2. sayfa hep 1. sayfa
+  const c = fakeClient(h);
+  const r = await tkc.collect({ client: c, cfg: CFG.stores.teknosa, scope: ['phone'], now: T1 });
+  assert.deepEqual(c.calls.map((x) => x.params.page), [1, 2, 2, 2, 3]);
+  assert.equal(r.stats.retries, 2);
+  assert.equal(r.stats.repeated, 1);
+  assert.deepEqual(r.stats.incomplete, ['cep-telefonu-c-100001: 2/3']);
+  assert.equal(r.status, 'ok');
+  assert.deepEqual(r.items.map((i) => i.productId).sort(), ['100000058142', '100000062357']);
+});
+
+test('Teknosa normal tur: sayfa tekrarı yoksa ek istek ve ek kredi yok', async () => {
+  const pages = { 1: [TK.a57], 2: [TK.a37], 3: [TK.a17] };
+  const c = fakeClient((engine, params) => ({ results: pages[params.page], total_pages: 3, total_results: 3 }));
+  const r = await tkc.collect({ client: c, cfg: CFG.stores.teknosa, scope: ['phone'], now: T1 });
+  assert.deepEqual(c.calls.map((x) => x.params.page), [1, 2, 3]);
+  assert.equal(r.stats.retries, undefined);
+  assert.equal(r.stats.incomplete, undefined);
+  assert.equal(r.stats.credits, 3);
+});

@@ -9,8 +9,8 @@
   "tz": "Europe/Istanbul",
   "limits": {
     "maxRunsPerDay": 2,
-    "maxCreditsPerRun": 90,
-    "maxCreditsPerDay": 180,
+    "maxCreditsPerRun": 100,
+    "maxCreditsPerDay": 200,
     "retainDays": 3,
     "maxPriceGap": 1.5
   },
@@ -63,7 +63,7 @@
         {
           "q": "samsung galaxy akıllı telefon",
           "scope": "phone",
-          "maxPages": 16
+          "maxPages": 24
         },
         {
           "q": "samsung galaxy tab tablet",

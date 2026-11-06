@@ -186,3 +186,33 @@ test('kulaklık: "Kablosuz" / "Kablolu" sözcüğü kablo (aksesuar) sayılmaz; 
   const vw = L('vatan', 'wearable', 'SAMSUNG EO-IC100B TYPE-C KABLOLU KULAKLIK - SİYAH', 'EO-IC100BBEGWW');
   assert.equal(linkItems([m, vw]), 1);
 });
+
+test('MediaMarkt sayfalama: gerçek son sayfa page_count\'tur (max_page sitenin 30 sınırıdır); fazladan sayfa istenmez', async () => {
+  const { fakeClient } = await import('./fixtures.mjs');
+  const mm = await import('../collectors/mediamarkt.mjs');
+  const fs = await import('node:fs');
+  const cfg = JSON.parse(fs.readFileSync(new URL('../config.json', import.meta.url), 'utf8'));
+  const row = { product_id: '1', title: 'SAMSUNG Galaxy A57 5G 8/256GB Akıllı Telefon Siyah', brand: 'SAMSUNG', url: 'https://www.mediamarkt.com.tr/tr/product/_a57-1.html', ean: '8806099044916', price: 30999, seller: { type: 'retailer', name: 'MediaMarkt' }, category: 'Samsung Telefon', breadcrumb: ['Telefon', 'Cep Telefonları'], availability: { online_status: 'available', buyable_online: true }, refurbished: false };
+  const c = fakeClient((engine, params) => ({ results: [row], max_page: 30, page_count: 2, page: params.page }));
+  await mm.collect({ client: c, cfg: cfg.stores.mediamarkt, scope: ['phone'], now: new Date('2026-11-05T03:00:00Z') });
+  assert.equal(c.calls.length, 2, 'page_count=2 iken yalnızca 2 sayfa istenmeli');
+});
+
+test('config: MediaMarkt telefon taraması tüm sayfaları (21+) kapsar; en kötü tur ve gün kredisi sınırlar içinde', async () => {
+  const fs = await import('node:fs');
+  const cfg = JSON.parse(fs.readFileSync(new URL('../config.json', import.meta.url), 'utf8'));
+  const ph = cfg.stores.mediamarkt.queries.find((q) => q.scope === 'phone');
+  assert.ok(ph.maxPages >= 22);
+  let worst = 0;
+  for (const st of Object.values(cfg.stores)) if (st.enabled) for (const q of st.queries) if (cfg.scope.includes(q.scope)) worst += q.maxPages * st.creditsPerCall;
+  assert.ok(worst <= cfg.limits.maxCreditsPerRun && worst * cfg.limits.maxRunsPerDay <= cfg.limits.maxCreditsPerDay);
+});
+
+test('saat/kulaklık: "SiyahKablolu" gibi yapışık yazımda renk ayrıştırılır (Teknosa EO-IC100B)', () => {
+  const t = E('teknosa', 'wearable', 'Samsung EO-IC100B Type-C SiyahKablolu Kulak İçi Kulaklık');
+  const m = E('mediamarkt', 'wearable', 'SAMSUNG EO-IC100B Kulak İçi Kablolu Kulak Siyah');
+  const b = E('teknosa', 'wearable', 'Samsung EO-IC100B Type-C Kablolu Beyaz Kukak İçi Kulaklık');
+  assert.equal(features(t).color, 'siyah');
+  assert.equal(linkItems([t, m, b]), 1);
+  assert.ok(same(t, m)); assert.notEqual(b.key, t.key);
+});

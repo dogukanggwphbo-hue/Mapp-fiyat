@@ -100,7 +100,7 @@ export async function collect({ client, cfg, scope, now }) {
         items.set(it.key, it);
         stats.accepted++;
       }
-      const last = Number(d.max_page || d.page_count || 1);
+      const last = Number(d.page_count || d.max_page || 1); // gerçek son sayfa (max_page sitenin üst sınırıdır, 30)
       if (page >= q.maxPages && page < last && relevant) stats.capped = true;
       if (!rows.length || page >= last || !relevant) break; // sonuçlar bitti ya da ilgili ürün kalmadı
     }

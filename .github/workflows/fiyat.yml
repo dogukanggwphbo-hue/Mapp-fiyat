@@ -2,17 +2,18 @@ name: Fiyat güncelle
 
 on:
   schedule:
-    # Asıl turlar 11:07 ve 19:07 (Türkiye). GitHub zamanlayıcısı yoğun saat başlarında geç başlatabilir ya da bir turu atlayabilir;
-    # bu yüzden dakikalar :00'dan kaydırıldı ve 40 dakika sonrasına YEDEK tur eklendi. Yedek tur, son 4 saatte başarılı tur varsa
-    # kendiliğinden atlanır (kredi harcamaz); asıl tur çalışmadıysa onun yerine çalışır.
-    - cron: '7 8 * * *'    # 11:07 (Türkiye)
-    - cron: '47 8 * * *'   # 11:47 yedek
-    - cron: '7 16 * * *'   # 19:07 (Türkiye)
-    - cron: '47 16 * * *'  # 19:47 yedek
+    # Asıl turlar sabah 10:00 ve öğlen 14:30 (Türkiye). Tur birkaç dakika sürdüğü ve GitHub zamanlayıcısı saat başı / yarım saatlerde
+    # geç başlatabildiği için turlar 5 dakika ÖNCE başlar (09:55 ve 14:25): veri 10:00 ve 14:30'da güncel olur.
+    # Her turun 30 dakika sonrasına YEDEK tur konur (10:25 ve 14:55). Yedek tur, son 2 saatte başarılı tur varsa kendiliğinden
+    # atlanır (kredi harcamaz); asıl tur çalışmadıysa ya da başarısız olduysa onun yerine çalışır. (UTC = Türkiye - 3 saat)
+    - cron: '55 6 * * *'   # 09:55 (Türkiye) -> 10:00 turu
+    - cron: '25 7 * * *'   # 10:25 yedek
+    - cron: '25 11 * * *'  # 14:25 (Türkiye) -> 14:30 turu
+    - cron: '55 11 * * *'  # 14:55 yedek
   workflow_dispatch:
     inputs:
       force:
-        description: 'Deneme turu: günlük sınırı yoksay (kredi harcar, ama 11:00 / 19:00 turlarının hakkından düşmez)'
+        description: 'Deneme turu: günlük sınırı yoksay (kredi harcar, ama 10:00 / 14:30 turlarının hakkından düşmez)'
         type: boolean
         default: false
 

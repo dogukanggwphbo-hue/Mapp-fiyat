@@ -2,8 +2,13 @@ name: Fiyat güncelle
 
 on:
   schedule:
-    - cron: '0 8 * * *'    # her gün 11:00 (Türkiye)
-    - cron: '0 16 * * *'   # her gün 19:00 (Türkiye)
+    # Asıl turlar 11:07 ve 19:07 (Türkiye). GitHub zamanlayıcısı yoğun saat başlarında geç başlatabilir ya da bir turu atlayabilir;
+    # bu yüzden dakikalar :00'dan kaydırıldı ve 40 dakika sonrasına YEDEK tur eklendi. Yedek tur, son 4 saatte başarılı tur varsa
+    # kendiliğinden atlanır (kredi harcamaz); asıl tur çalışmadıysa onun yerine çalışır.
+    - cron: '7 8 * * *'    # 11:07 (Türkiye)
+    - cron: '47 8 * * *'   # 11:47 yedek
+    - cron: '7 16 * * *'   # 19:07 (Türkiye)
+    - cron: '47 16 * * *'  # 19:47 yedek
   workflow_dispatch:
     inputs:
       force:

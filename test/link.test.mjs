@@ -216,3 +216,17 @@ test('saat/kulaklık: "SiyahKablolu" gibi yapışık yazımda renk ayrıştırı
   assert.equal(linkItems([t, m, b]), 1);
   assert.ok(same(t, m)); assert.notEqual(b.key, t.key);
 });
+
+test('yedek zamanlar: son 4 saatte başarılı zamanlanmış tur varsa yedek tur atlanır; elle (force) ya da başarısız tur sayılmaz', async () => {
+  const { recentRun } = await import('../lib/store.mjs');
+  const st = (runs) => ({ runs });
+  const asil = { at: '2026-11-06T08:07:00Z', credits: 70, ok: true, force: false };
+  assert.equal(recentRun(st([asil]), new Date('2026-11-06T08:47:00Z'), 4), true);   // 11:47 yedek, asıl tur çalışmış → atla
+  assert.equal(recentRun(st([asil]), new Date('2026-11-06T16:07:00Z'), 4), false);  // 19:07 akşam turu → çalışır
+  assert.equal(recentRun(st([asil]), new Date('2026-11-06T16:47:00Z'), 4), false);  // 19:47 yedek, akşam turu henüz yok → çalışır
+  assert.equal(recentRun(st([]), new Date('2026-11-06T08:47:00Z'), 4), false);      // asıl tur hiç çalışmadı → yedek çalışır
+  assert.equal(recentRun(st([{ ...asil, ok: false }]), new Date('2026-11-06T08:47:00Z'), 4), false); // asıl tur başarısızdı → yedek dener
+  assert.equal(recentRun(st([{ ...asil, force: true }]), new Date('2026-11-06T08:47:00Z'), 4), false); // elle tur hakkı yemez
+  const aksam = { at: '2026-11-06T16:09:00Z', credits: 70, ok: true, force: false };
+  assert.equal(recentRun(st([asil, aksam]), new Date('2026-11-06T16:47:00Z'), 4), true);  // akşam yedeği atlanır
+});

@@ -9,6 +9,7 @@
   "tz": "Europe/Istanbul",
   "limits": {
     "maxRunsPerDay": 2,
+    "minGapHours": 4,
     "maxCreditsPerRun": 110,
     "maxCreditsPerDay": 220,
     "retainDays": 3,

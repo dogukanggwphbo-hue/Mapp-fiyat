@@ -3,7 +3,7 @@
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createClient } from './lib/reef.mjs';
-import { readJson, writeJson, istDay, runsToday, mergeItems, flagOutliers } from './lib/store.mjs';
+import { readJson, writeJson, istDay, runsToday, recentRun, mergeItems, flagOutliers } from './lib/store.mjs';
 import { validateFeed, CATS, CHANNEL_NAMES, CAT_LABELS } from './lib/validate.mjs';
 import { linkItems } from './lib/link.mjs';
 import * as teknosa from './collectors/teknosa.mjs';
@@ -31,6 +31,11 @@ export async function run({ makeClient, cfg, dir, now = new Date(), force = fals
   if (!force && today.length >= L.maxRunsPerDay) {
     log(`Günlük sınır doldu (${today.length}/${L.maxRunsPerDay} tur). Sorgu yapılmadı.`);
     return { skipped: 'tur-siniri' };
+  }
+  // Yedek zamanlar (GitHub zamanlayıcısı gecikebilir ya da bir turu atlayabilir): yakın zamanda başarılı tur yapıldıysa bu tur atlanır, kredi harcanmaz.
+  if (!force && L.minGapHours && recentRun(state, now, L.minGapHours)) {
+    log(`Son ${L.minGapHours} saat içinde başarılı bir tur yapıldı; yedek tur atlandı. Sorgu yapılmadı.`);
+    return { skipped: 'yakin-tur' };
   }
   const dayLeft = force ? L.maxCreditsPerRun : L.maxCreditsPerDay - spentToday;
   if (dayLeft <= 0) { log('Günlük kredi sınırı doldu. Sorgu yapılmadı.'); return { skipped: 'kredi-siniri' }; }

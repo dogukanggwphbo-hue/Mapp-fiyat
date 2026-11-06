@@ -45,7 +45,7 @@ jobs:
           git config user.name "mapp-fiyat-bot"
           git config user.email "mapp-fiyat-bot@users.noreply.github.com"
           git add data/
-          git diff --cached --quiet || { git commit -m "Fiyatlar güncellendi" && git push; }
+          git diff --cached --quiet || { git commit -m "Fiyatlar güncellendi" && { git push || { git pull --rebase -X theirs && git push; }; }; }
       - name: Zamanlayıcıyı canlı tut
         # GitHub, herkese açık depoda 60 gün etkinlik olmazsa zamanlanmış çalışmaları kapatır.
         # Bu adım her turda iş akışını "etkinleştir" API'siyle yeniler; sayaç sıfırlanır. Başarısız olsa bile tur sonucu bozulmaz.

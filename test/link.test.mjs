@@ -230,3 +230,24 @@ test('yedek zamanlar: son 4 saatte başarılı zamanlanmış tur varsa yedek tur
   const aksam = { at: '2026-11-06T16:09:00Z', credits: 70, ok: true, force: false };
   assert.equal(recentRun(st([asil, aksam]), new Date('2026-11-06T16:47:00Z'), 4), true);  // akşam yedeği atlanır
 });
+
+test("fiyat geçmişi: kampanya (Web'e Özel) fiyatı bitince prevWeb=true saklanır; fiyat değişmezse korunur; normal fiyat değişimi prevWeb=false", async () => {
+  const { mergeItems } = await import('../lib/store.mjs');
+  const t0 = '2026-11-05T20:00:00.000Z', t1 = '2026-11-06T08:00:00.000Z', t2 = '2026-11-06T16:00:00.000Z';
+  const base = (price, extra) => ({ ch: 'vatan', key: 'k1', name: 'Galaxy S26 Ultra', label: 'Galaxy S26 Ultra', price, checkedAt: t0, ...extra });
+  // 1) web özel fiyat (98.999) -> normal fiyat (119.999)
+  let out = mergeItems([base(98999, { webExclusive: true, tags: ["Web'e Özel"] })], [base(119999, { checkedAt: t1 })], t1, 3);
+  assert.equal(out[0].prev, 98999); assert.equal(out[0].prevWeb, true); assert.equal(out[0].since, t1);
+  // 2) fiyat değişmedi: prevWeb korunur
+  out = mergeItems(out, [base(119999, { checkedAt: t2 })], t2, 3);
+  assert.equal(out[0].prevWeb, true); assert.equal(out[0].since, t1);
+  // 3) normal fiyat değişimi: prevWeb false
+  out = mergeItems([base(100000)], [base(110000, { checkedAt: t1 })], t1, 3);
+  assert.equal(out[0].prevWeb, false);
+  // 4) yalnızca etiketle işaretli (webExclusive alanı yok)
+  out = mergeItems([base(5000, { tags: ["Web'e Özel"] })], [base(6000, { checkedAt: t1 })], t1, 3);
+  assert.equal(out[0].prevWeb, true);
+  // 5) ilk gözlem: prevWeb yok
+  out = mergeItems([], [base(5000)], t1, 3);
+  assert.equal(out[0].prevWeb, undefined);
+});

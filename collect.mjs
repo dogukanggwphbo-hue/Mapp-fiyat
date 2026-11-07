@@ -2,7 +2,7 @@
 // Çıktı: data/prices.json (uygulamanın okuduğu doğrulanmış dosya) ve data/state.json (günlük sınır kaydı).
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createClient } from './lib/reef.mjs';
+import { createClient, keyFp } from './lib/reef.mjs';
 import { readJson, writeJson, istDay, runsToday, recentRun, mergeItems, flagOutliers } from './lib/store.mjs';
 import { validateFeed, CATS, CHANNEL_NAMES, CAT_LABELS } from './lib/validate.mjs';
 import { linkItems } from './lib/link.mjs';
@@ -14,6 +14,16 @@ const COLLECTORS = [teknosa, mediamarkt, vatan]; // ucuzdan pahalıya; biri çö
 const ORDER = { mediamarkt: 0, teknosa: 1, vatan: 2 };
 
 export const emptyFeed = () => ({ schema: 2, updated: null, cats: [], sites: {}, items: [], run: null });
+
+/**
+ * Anahtar sırası: son 24 saatte "kredi bitti / geçersiz" işaretlenenler en sona alınır (kredi harcanmadan yeni anahtarla başlanır);
+ * 24 saat sonra eski önceliğine döner (kredisi yenilenmiş olabilir). Hepsi işaretliyse yine hepsi sırayla denenir.
+ */
+export function orderKeys(keys, state, now = new Date()) {
+  const bad = (state && state.badKeys) || {}, t = now.getTime();
+  const isBad = (k) => { const b = bad[keyFp(k)]; return !!b && t - Date.parse(b.at) < 24 * 3600e3; };
+  return keys.filter((k) => !isBad(k)).concat(keys.filter(isBad));
+}
 
 export async function run({ makeClient, cfg, dir, now = new Date(), force = false, log = console.log }) {
   const feedPath = path.join(dir, 'data/prices.json');
@@ -39,7 +49,7 @@ export async function run({ makeClient, cfg, dir, now = new Date(), force = fals
   }
   const dayLeft = force ? L.maxCreditsPerRun : L.maxCreditsPerDay - spentToday;
   if (dayLeft <= 0) { log('Günlük kredi sınırı doldu. Sorgu yapılmadı.'); return { skipped: 'kredi-siniri' }; }
-  const client = makeClient(Math.min(L.maxCreditsPerRun, dayLeft));
+  const client = makeClient(Math.min(L.maxCreditsPerRun, dayLeft), state);
 
   // 2) Mağaza başına bağımsız toplama
   const scope = cfg.scope.filter((c) => CATS.includes(c));
@@ -107,11 +117,27 @@ export async function run({ makeClient, cfg, dir, now = new Date(), force = fals
     writeJson(path.join(dir, 'data/prices.json'), feed);
     wrote = true;
   }
+  // Anahtar durumu: kullanılamaz çıkan anahtar parmak iziyle (anahtarın kendisi değil) 24 saat işaretlenir; çalışan anahtarın işareti kalkar.
+  const badNew = (client.badKeys || []).filter((b) => b.persist);
+  (client.badKeys || []).forEach((b) => log(`Anahtar ${b.fp} kullanılamadı (${b.why === 'kredi' ? 'kredisi bitti' : b.why === 'gecersiz' ? 'geçersiz' : 'yetki hatası'}, HTTP ${b.status})` +
+    (client.keyIndex > 0 ? ` · tur ${client.keyIndex + 1}. anahtarla sürdürüldü.` : ' · yedek anahtar yok ya da o da kullanılamadı.')));
+  let keyChanged = false;
+  if (badNew.length) {
+    state.badKeys = state.badKeys || {};
+    for (const b of badNew) state.badKeys[b.fp] = { at: nowIso, why: b.why };
+    keyChanged = true;
+  }
+  if (client.spent > 0 && client.activeFp && state.badKeys && state.badKeys[client.activeFp] && !badNew.some((b) => b.fp === client.activeFp)) { delete state.badKeys[client.activeFp]; keyChanged = true; }
+  if (state.badKeys) {
+    const cut = Date.parse(nowIso) - 14 * 86400000;
+    for (const k of Object.keys(state.badKeys)) if (Date.parse(state.badKeys[k].at) < cut) { delete state.badKeys[k]; keyChanged = true; }
+    if (!Object.keys(state.badKeys).length) delete state.badKeys;
+  }
   if (client.spent > 0 || anyFresh) {
     const keep = Date.parse(nowIso) - 30 * 86400000;
     state.runs = (state.runs || []).filter((r) => Date.parse(r.at) >= keep).concat([{ at: nowIso, credits: client.spent, ok: anyFresh, force: !!force }]);
     writeJson(statePath, state, 1);
-  }
+  } else if (keyChanged) writeJson(statePath, state, 1);
   log(`Bitti · bu tur ${client.spent} kredi · bugün toplam ${spentToday + client.spent} · ${feed.items.length} kayıt · ${istDay(now, cfg.tz)}`);
   return { feed, wrote, problems, credits: client.spent };
 }
@@ -121,8 +147,9 @@ async function main() {
   const cfg = readJson(path.join(dir, 'config.json'), null);
   if (!cfg) throw new Error('config.json okunamadı');
   const force = process.argv.includes('--force');
-  const key = process.env.REEFAPI_KEY;
-  const out = await run({ makeClient: (max) => createClient({ key, maxCredits: max }), cfg, dir, force });
+  // Anahtarlar öncelik sırasıyla: REEFAPI_KEY, REEFAPI_KEY_2, REEFAPI_KEY_3. Biri biterse/geçersizse sıradaki ile kesintisiz devam edilir.
+  const keys = ['REEFAPI_KEY', 'REEFAPI_KEY_2', 'REEFAPI_KEY_3'].map((n) => String(process.env[n] || '').trim()).filter((k, i, a) => k && a.indexOf(k) === i);
+  const out = await run({ makeClient: (max, state) => createClient({ keys: orderKeys(keys, state, new Date()), maxCredits: max }), cfg, dir, force });
   if (out.problems && out.problems.length) process.exitCode = 1;
   // Tek mağazanın hatası işi kırmaz (son başarılı veri korunur, durum prices.json'da görünür).
   // Ama hiçbir mağaza çalışmadıysa (ör. anahtar eksik) iş KIRMIZI biter ki fark edilsin.

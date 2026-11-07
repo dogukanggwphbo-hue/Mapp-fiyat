@@ -37,6 +37,8 @@ jobs:
       - name: Fiyatları topla
         env:
           REEFAPI_KEY: ${{ secrets.REEFAPI_KEY }}
+          REEFAPI_KEY_2: ${{ secrets.REEFAPI_KEY_2 }}   # isteğe bağlı yedek anahtarlar: ilki biterse/geçersizse otomatik devreye girer
+          REEFAPI_KEY_3: ${{ secrets.REEFAPI_KEY_3 }}
         run: node collect.mjs ${{ inputs.force && '--force' || '' }}
       - name: Kaydet
         if: always()

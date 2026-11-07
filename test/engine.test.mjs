@@ -8,10 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { gtinOk, parseVariant, classify, cleanLabel, isWebExclusive } from '../lib/normalize.mjs';
 import { validateItem, validateFeed } from '../lib/validate.mjs';
 import { mergeItems, flagOutliers, istDay } from '../lib/store.mjs';
-import { createClient, ReefError } from '../lib/reef.mjs';
+import { createClient, ReefError, keyFp, keyProblem, isFatal } from '../lib/reef.mjs';
 import * as mmc from '../collectors/mediamarkt.mjs';
 import * as tkc from '../collectors/teknosa.mjs';
-import { run } from '../collect.mjs';
+import { run, orderKeys } from '../collect.mjs';
 import { MM, MMX, TK, VT, fakeClient } from './fixtures.mjs';
 import * as vtc from '../collectors/vatan.mjs';
 import { linkItems, modelParts } from '../lib/link.mjs';
@@ -260,6 +260,97 @@ test('ReefAPI istemcisi: x-api-key başlığı, gövde biçimi yedeği, anahtar 
   await assert.rejects(() => bad.call('teknosa', 'search', {}), (e) => !String(e.message).includes(key) && /401/.test(e.message));
   const nokey = createClient({ key: '', fetchImpl });
   await assert.rejects(() => nokey.call('teknosa', 'search', {}), /REEFAPI_KEY/);
+});
+
+const KA = 'anahtar-' + 'A-111', KB = 'anahtar-' + 'B-222', KC = 'anahtar-' + 'C-333';
+const okRes = () => new Response(JSON.stringify({ ok: true, data: { results: [] }, meta: { charged_credits: 2 } }), { status: 200 });
+const errRes = (status, message) => new Response(JSON.stringify({ ok: false, error: { message } }), { status });
+
+test('çoklu anahtar: ilk anahtarın kredisi bitince (402) aynı istek sıradaki anahtarla kesintisiz tekrarlanır', async () => {
+  const used = [];
+  const fetchImpl = async (url, opt) => {
+    const k = opt.headers['x-api-key']; used.push(k);
+    return k === KA ? errRes(402, 'Payment required ' + KA) : okRes();
+  };
+  const cl = createClient({ keys: [KA, KB], fetchImpl, sleep: async () => {} });
+  const r = await cl.call('teknosa', 'search', { q: 1 });
+  assert.equal(r.ok, true);
+  assert.deepEqual(used, [KA, KB]);               // aynı istek bir kez A ile denendi, B ile geçti
+  assert.equal(cl.keyIndex, 1); assert.equal(cl.spent, 2);
+  assert.deepEqual(cl.badKeys.map((b) => [b.fp, b.why, b.persist]), [[keyFp(KA), 'kredi', true]]);
+  await cl.call('teknosa', 'search', { q: 2 });   // sonraki istekler doğrudan B ile
+  assert.deepEqual(used.slice(2), [KB]);
+});
+
+test('çoklu anahtar: kredi mesajlı 429 / geçersiz anahtar (401) de devreder; mesajsız 429 hız sınırıdır, anahtar değişmez', async () => {
+  let n = 0;
+  const f1 = async (u, o) => (o.headers['x-api-key'] === KA ? errRes(429, 'Monthly quota exceeded') : okRes());
+  const c1 = createClient({ keys: [KA, KB], fetchImpl: f1, sleep: async () => {} });
+  await c1.call('x', 'y', {}); assert.equal(c1.keyIndex, 1);
+  const f2 = async (u, o) => (o.headers['x-api-key'] === KA ? errRes(401, 'Invalid API key') : okRes());
+  const c2 = createClient({ keys: [KA, KB], fetchImpl: f2, sleep: async () => {} });
+  await c2.call('x', 'y', {}); assert.equal(c2.keyIndex, 1); assert.equal(c2.badKeys[0].why, 'gecersiz');
+  const f3 = async () => { n++; return n < 3 ? errRes(429, 'slow down') : okRes(); };
+  const c3 = createClient({ keys: [KA, KB], fetchImpl: f3, sleep: async () => {} });
+  await c3.call('x', 'y', {}); assert.equal(c3.keyIndex, 0); assert.equal(c3.badKeys.length, 0); assert.equal(n, 3);
+});
+
+test('çoklu anahtar: 403 (kalıcı olmayan) sıradaki anahtarı dener ama kalıcı işaretlenmez', async () => {
+  const f = async (u, o) => (o.headers['x-api-key'] === KA ? errRes(403, 'forbidden') : okRes());
+  const cl = createClient({ keys: [KA, KB], fetchImpl: f, sleep: async () => {} });
+  await cl.call('x', 'y', {});
+  assert.equal(cl.keyIndex, 1); assert.equal(cl.badKeys[0].persist, false);
+});
+
+test('çoklu anahtar: hepsi bitmişse tur durur (ölümcül hata), anahtarlar hata metnine sızmaz, kredi harcanmaz', async () => {
+  const calls = [];
+  const f = async (u, o) => { calls.push(o.headers['x-api-key']); return errRes(402, 'no credits ' + KA + ' ' + KB); };
+  const cl = createClient({ keys: [KA, KB, KC], fetchImpl: f, sleep: async () => {} });
+  await assert.rejects(() => cl.call('x', 'y', {}), (e) => e instanceof ReefError && e.status === 402 && e.keyProblem === 'kredi' && isFatal(e) && !e.message.includes(KA) && !e.message.includes(KB));
+  assert.deepEqual(calls, [KA, KB, KC]);
+  assert.equal(cl.spent, 0); assert.equal(cl.badKeys.length, 3);
+});
+
+test('tek anahtar eskisi gibi çalışır; keyProblem sınıflandırması', async () => {
+  const cl = createClient({ key: KA, fetchImpl: async () => okRes(), sleep: async () => {} });
+  assert.equal((await cl.call('x', 'y', {})).ok, true);
+  assert.equal(cl.keyCount, 1);
+  assert.equal(keyProblem(402, '').why, 'kredi'); assert.equal(keyProblem(401, 'bad').why, 'gecersiz');
+  assert.equal(keyProblem(403, 'x').persist, false); assert.equal(keyProblem(429, 'slow'), null); assert.equal(keyProblem(429, 'Rate limit exceeded'), null); assert.equal(keyProblem(500, 'quota'), null);
+  assert.equal(isFatal(new ReefError('x', { status: 402 })), true); assert.equal(isFatal(new ReefError('x', { status: 429 })), false);
+});
+
+test('anahtar sırası: son 24 saatte kredisi biten anahtar sona alınır, 24 saat sonra eski önceliğine döner; hepsi işaretliyse hepsi denenir', () => {
+  const now = new Date('2026-11-07T10:00:00Z');
+  const st = { badKeys: { [keyFp(KA)]: { at: '2026-11-07T06:00:00Z', why: 'kredi' } } };
+  assert.deepEqual(orderKeys([KA, KB], st, now), [KB, KA]);
+  assert.deepEqual(orderKeys([KA, KB], { badKeys: { [keyFp(KA)]: { at: '2026-11-06T06:00:00Z', why: 'kredi' } } }, now), [KA, KB]);
+  assert.deepEqual(orderKeys([KA, KB], { badKeys: { [keyFp(KA)]: { at: '2026-11-07T06:00:00Z' }, [keyFp(KB)]: { at: '2026-11-07T07:00:00Z' } } }, now), [KA, KB]);
+  assert.deepEqual(orderKeys([KA], {}, now), [KA]); assert.deepEqual(orderKeys([], null, now), []);
+});
+
+test('uçtan uca: anahtar bitince tur yedek anahtarla sürer; işaret durum dosyasına parmak iziyle yazılır; anahtarın kendisi hiçbir dosyaya yazılmaz', async () => {
+  const dir = tmp();
+  const inner = fakeClient(handlerFor());
+  let seenState = null;
+  const client = Object.assign(Object.create(inner), {
+    get badKeys() { return [{ fp: keyFp(KA), why: 'kredi', persist: true, status: 402 }]; },
+    get keyIndex() { return 1; },
+    get activeFp() { return keyFp(KB); },
+  });
+  const logs = [];
+  const out = await run({ makeClient: (max, state) => { seenState = state; return client; }, cfg: CFG, dir, now: T1, log: (m) => logs.push(m) });
+  assert.equal(out.wrote, true, JSON.stringify(out.problems));
+  assert.ok(seenState && Array.isArray(seenState.runs), 'makeClient durumu alır');
+  const st = JSON.parse(fs.readFileSync(path.join(dir, 'data/state.json'), 'utf8'));
+  assert.equal(st.badKeys[keyFp(KA)].why, 'kredi');
+  assert.ok(logs.some((m) => /kredisi bitti/.test(m) && /2\. anahtarla sürdürüldü/.test(m)));
+  for (const f of ['data/state.json', 'data/prices.json']) assert.ok(!fs.readFileSync(path.join(dir, f), 'utf8').includes(KA));
+  // sonraki turda çalışan anahtarın işareti kalkar (A yeniden yenilenmiş ve A ile çalışıldıysa)
+  const client2 = Object.assign(Object.create(fakeClient(handlerFor())), { get badKeys() { return []; }, get keyIndex() { return 0; }, get activeFp() { return keyFp(KA); } });
+  await run({ makeClient: () => client2, cfg: CFG, dir, now: new Date(T1.getTime() + 8 * 3600e3), force: true, log: () => {} });
+  const st2 = JSON.parse(fs.readFileSync(path.join(dir, 'data/state.json'), 'utf8'));
+  assert.ok(!st2.badKeys, 'çalışan anahtarın kredi işareti temizlendi');
 });
 
 test('sayfalama: yalnızca pazaryeri satırlarından oluşan sayfa taramayı bitirmez', async () => {

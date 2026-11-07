@@ -217,31 +217,38 @@ test('saat/kulaklık: "SiyahKablolu" gibi yapışık yazımda renk ayrıştırı
   assert.ok(same(t, m)); assert.notEqual(b.key, t.key);
 });
 
-test('yedek zamanlar: son 6 saatte başarılı tur varsa yedek ya da geç kalan tur atlanır; ertesi gün çalışır; elle (force) ya da başarısız tur sayılmaz', async () => {
+test('yedek zamanlar: son 3 saatte başarılı tur varsa yedek ya da geç kalan tur atlanır; sonraki tur (6 saat sonra) çalışır; elle (force) ya da başarısız tur sayılmaz', async () => {
   const { recentRun } = await import('../lib/store.mjs');
   const st = (runs) => ({ runs });
-  const G = 6; // config.json > limits.minGapHours
-  const asil = { at: '2026-11-07T10:57:00Z', credits: 70, ok: true, force: false }; // 13:57 TR (14:00 turu)
-  assert.equal(recentRun(st([asil]), new Date('2026-11-07T11:25:00Z'), G), true);    // 14:25 yedek, asıl tur çalışmış → atla
-  assert.equal(recentRun(st([asil]), new Date('2026-11-08T10:55:00Z'), G), false);   // ertesi gün 13:55 turu → çalışır
-  assert.equal(recentRun(st([]), new Date('2026-11-07T11:25:00Z'), G), false);       // asıl tur hiç çalışmadı → yedek çalışır
-  assert.equal(recentRun(st([{ ...asil, ok: false }]), new Date('2026-11-07T11:25:00Z'), G), false); // asıl tur başarısızdı → yedek dener
-  assert.equal(recentRun(st([{ ...asil, force: true }]), new Date('2026-11-07T11:25:00Z'), G), false); // elle tur hakkı yemez
+  const G = 3; // config.json > limits.minGapHours
+  const asil = { at: '2026-11-08T07:27:00Z', credits: 70, ok: true, force: false }; // 10:27 TR (10:30 turu)
+  assert.equal(recentRun(st([asil]), new Date('2026-11-08T07:55:00Z'), G), true);    // 10:55 yedek, asıl tur çalışmış → atla
+  assert.equal(recentRun(st([asil]), new Date('2026-11-08T13:25:00Z'), G), false);   // 16:25 turu → çalışır
+  assert.equal(recentRun(st([]), new Date('2026-11-08T07:55:00Z'), G), false);       // asıl tur hiç çalışmadı → yedek çalışır
+  assert.equal(recentRun(st([{ ...asil, ok: false }]), new Date('2026-11-08T07:55:00Z'), G), false); // asıl tur başarısızdı → yedek dener
+  assert.equal(recentRun(st([{ ...asil, force: true }]), new Date('2026-11-08T07:55:00Z'), G), false); // elle tur hakkı yemez
+  // sabah turu 1 saat geç başlasa bile (11:27) akşamüstü turu (16:25) yine çalışır: aralık 5 saat > 3 saat
+  const gec = { at: '2026-11-08T08:27:00Z', credits: 70, ok: true, force: false };
+  assert.equal(recentRun(st([gec]), new Date('2026-11-08T13:25:00Z'), G), false);
   // yedek çalıştı, GitHub'da geciken asıl tur 1,5 saat sonra başlarsa tekrar kredi harcamaz
-  const yedek = { at: '2026-11-07T11:26:00Z', credits: 70, ok: true, force: false };
-  assert.equal(recentRun(st([yedek]), new Date('2026-11-07T12:30:00Z'), G), true);
+  const yedek = { at: '2026-11-08T07:56:00Z', credits: 70, ok: true, force: false };
+  assert.equal(recentRun(st([yedek]), new Date('2026-11-08T09:30:00Z'), G), true);
 });
 
-test('zamanlama: iş akışı günde 1 tur: 13:55 (14:00 turu) ve 14:25 (14:30 yedek) Türkiye saatinde; yedek asıl turdan 30 dk sonradır', async () => {
+test('zamanlama: iş akışı günde 2 tur: 10:25 (10:30 turu) ve 16:25 (16:30 turu) + 30 dk sonra yedekleri, Türkiye saatinde', async () => {
   const fs = await import('node:fs');
   const yml = fs.readFileSync(new URL('../.github/workflows/fiyat.yml', import.meta.url), 'utf8');
   const crons = [...yml.matchAll(/^\s*-\s*cron:\s*'(\d+)\s+(\d+)\s+\*\s+\*\s+\*'/gm)].map((m) => ({ min: Number(m[1]), hr: Number(m[2]) }));
   const tr = crons.map((c) => `${String((c.hr + 3) % 24).padStart(2, '0')}:${String(c.min).padStart(2, '0')}`);
-  assert.deepEqual(tr, ['13:55', '14:25']);
+  assert.deepEqual(tr, ['10:25', '10:55', '16:25', '16:55']);
   const cfg = JSON.parse(fs.readFileSync(new URL('../config.json', import.meta.url), 'utf8'));
-  assert.equal(cfg.limits.minGapHours, 6);
-  // yedek atlama süresi 30 dk yedek aralığından büyük, ertesi günkü turdan küçük olmalı
-  assert.ok(cfg.limits.minGapHours * 60 > 30 && cfg.limits.minGapHours <= 12);
+  assert.equal(cfg.limits.minGapHours, 3);
+  assert.equal(cfg.limits.maxRunsPerDay, 2);
+  // yedek atlama süresi 30 dk yedek aralığından büyük, sabah-akşamüstü arası (6 saat) eksi olası 2 saat gecikmeden küçük olmalı
+  assert.ok(cfg.limits.minGapHours * 60 > 30 && cfg.limits.minGapHours <= 4);
+  // iş akışı her zaman main'in en güncel halini alır (sıradaki ikinci tur, birincinin tur kaydını görsün)
+  assert.match(yml, /uses: actions\/checkout@v4\s+with:[\s\S]*?ref: main/);
+  assert.match(yml, /--dry/);
 });
 
 test("fiyat geçmişi: kampanya (Web'e Özel) fiyatı bitince prevWeb=true saklanır; fiyat değişmezse korunur; normal fiyat değişimi prevWeb=false", async () => {

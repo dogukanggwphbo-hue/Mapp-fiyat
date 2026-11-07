@@ -2,20 +2,26 @@ name: Fiyat güncelle
 
 on:
   schedule:
-    # Günde 1 tur: öğlen 14:00 (Türkiye). Tur birkaç dakika sürdüğü ve GitHub zamanlayıcısı saat başı / yarım saatlerde
-    # geç başlatabildiği için tur 5 dakika ÖNCE başlar (13:55): veri 14:00'te güncel olur.
-    # 30 dakika sonrasına YEDEK tur konur (14:25 -> 14:30). Yedek tur, son 6 saatte başarılı tur varsa kendiliğinden atlanır
-    # (kredi harcamaz); asıl tur çalışmadıysa ya da başarısız olduysa onun yerine çalışır. (UTC = Türkiye - 3 saat)
-    - cron: '55 10 * * *'  # 13:55 (Türkiye) -> 14:00 turu
-    - cron: '25 11 * * *'  # 14:25 yedek -> 14:30
+    # Günde 2 tur: sabah 10:30 ve akşamüstü 16:30 (Türkiye). Tur birkaç dakika sürdüğü ve GitHub zamanlayıcısı geç başlatabildiği için
+    # tur 5 dakika ÖNCE başlar (10:25 / 16:25): veri 10:30 / 16:30'da güncel olur. (UTC = Türkiye - 3 saat)
+    # Her turun 30 dakika sonrasına YEDEK tur konur. Yedek tur, son 3 saatte başarılı tur varsa kendiliğinden atlanır (kredi harcamaz);
+    # asıl tur çalışmadıysa ya da başarısız olduysa onun yerine çalışır. Ayrıca GitHub'dan bağımsız bir zamanlanmış görev de aynı saatlerde bu iş akışını başlatır.
+    - cron: '25 7 * * *'   # 10:25 (Türkiye) -> sabah turu
+    - cron: '55 7 * * *'   # 10:55 yedek
+    - cron: '25 13 * * *'  # 16:25 (Türkiye) -> akşamüstü turu
+    - cron: '55 13 * * *'  # 16:55 yedek
   workflow_dispatch:
     inputs:
       force:
-        description: 'Deneme turu: günlük sınırı yoksay (kredi harcar, ama 14:00 turunun hakkından düşmez)'
+        description: 'Deneme turu: günlük sınırı yoksay (kredi harcar, ama sabah/akşamüstü turlarının hakkından düşmez)'
+        type: boolean
+        default: false
+      dry:
+        description: 'Kuru tur: hiçbir sorgu yapmaz, kredi harcamaz; yalnızca tur çalışır mı ve hangi anahtar sırasıyla çalışırdı onu gösterir'
         type: boolean
         default: false
       key_slot:
-        description: 'Anahtar: auto = normal sıra (1. anahtar, bitince 2.); 2 veya 3 = yalnızca o yedek anahtarla dene (yedeğe geçilmez)'
+        description: 'Anahtar: auto = normal sıra (1 → 2 → 3 sırayla); 2 veya 3 = yalnızca o anahtarla dene (yedeğe geçilmez)'
         type: choice
         options: [auto, '2', '3']
         default: auto
@@ -34,6 +40,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Her zaman main'in EN GÜNCEL hali: aynı anda sıraya girmiş iki tur olsa bile ikincisi, birincinin kaydettiği tur kaydını görür ve gereksiz kredi harcamaz.
+          ref: main
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -45,7 +54,7 @@ jobs:
           REEFAPI_KEY_2: ${{ secrets.REEFAPI_KEY_2 }}   # isteğe bağlı yedek anahtarlar: ilki biterse/geçersizse otomatik devreye girer
           REEFAPI_KEY_3: ${{ secrets.REEFAPI_KEY_3 }}
           REEFAPI_ONLY: ${{ inputs.key_slot == 'auto' && '' || inputs.key_slot }}
-        run: node collect.mjs ${{ inputs.force && '--force' || '' }}
+        run: node collect.mjs ${{ inputs.force && '--force' || '' }} ${{ inputs.dry && '--dry' || '' }}
       - name: Kaydet
         if: always()
         run: |

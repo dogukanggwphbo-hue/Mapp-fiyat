@@ -7,9 +7,10 @@
     "adapter"
   ],
   "tz": "Europe/Istanbul",
+  "keyRotationFrom": "2026-11-08T00:00:00+03:00",
   "limits": {
     "maxRunsPerDay": 2,
-    "minGapHours": 6,
+    "minGapHours": 3,
     "maxCreditsPerRun": 110,
     "maxCreditsPerDay": 220,
     "retainDays": 3,

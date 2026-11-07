@@ -11,7 +11,7 @@ import { mergeItems, flagOutliers, istDay } from '../lib/store.mjs';
 import { createClient, ReefError, keyFp, keyProblem, isFatal } from '../lib/reef.mjs';
 import * as mmc from '../collectors/mediamarkt.mjs';
 import * as tkc from '../collectors/teknosa.mjs';
-import { run, orderKeys, pickKeys } from '../collect.mjs';
+import { run, orderKeys, pickKeys, rotateKeys } from '../collect.mjs';
 import { MM, MMX, TK, VT, fakeClient } from './fixtures.mjs';
 import * as vtc from '../collectors/vatan.mjs';
 import { linkItems, modelParts } from '../lib/link.mjs';
@@ -338,6 +338,62 @@ test('anahtar seçimi: normal sırada 1,2,3; REEFAPI_ONLY=2 yalnızca 2. anahtar
   assert.deepEqual(pickKeys({ REEFAPI_KEY: KA, REEFAPI_KEY_2: KA }).entries, [{ k: KA, slot: 1 }], 'aynı anahtar iki kez eklenirse tek sayılır');
   const cl = createClient({ keys: [KB, KA], slots: [2, 1], fetchImpl: async () => okRes(), sleep: async () => {} });
   assert.equal(cl.activeSlot, 2);
+});
+
+test('sıralı dönüş: her turda sıradaki anahtar öncelikli (1→2→3→1); deneme (force) turları sırayı bozmaz; kredisi biten anahtar atlanır, kalanlar kendi aralarında döner', () => {
+  const E3 = [{ k: KA, slot: 1 }, { k: KB, slot: 2 }, { k: KC, slot: 3 }];
+  const slots = (es) => es.map((e) => e.slot);
+  const R = (at, slot, force = false) => ({ at, credits: 80, ok: true, force, slot });
+  const FROM = '2026-11-08T00:00:00+03:00';
+  // başlangıç: dönüş tarihinden önceki turlar sayılmaz → 1. anahtarla başlar
+  assert.deepEqual(slots(rotateKeys(E3, { runs: [R('2026-11-07T11:03:00Z', 1)] }, FROM)), [1, 2, 3]);
+  assert.deepEqual(slots(rotateKeys(E3, { runs: [] }, FROM)), [1, 2, 3]);
+  assert.deepEqual(slots(rotateKeys(E3, null, FROM)), [1, 2, 3]);
+  // 8 Kasım 10:30 → 1; 16:30 → 2; 9 Kasım 10:30 → 3; 16:30 → 1 …
+  let runs = [];
+  const seq = [];
+  for (const at of ['2026-11-08T07:30:00Z', '2026-11-08T13:30:00Z', '2026-11-09T07:30:00Z', '2026-11-09T13:30:00Z', '2026-11-10T07:30:00Z']) {
+    const order = rotateKeys(E3, { runs }, FROM); seq.push(order[0].slot);
+    runs = runs.concat([R(at, order[0].slot)]);
+  }
+  assert.deepEqual(seq, [1, 2, 3, 1, 2]);
+  // yedek: önce öncelikli, sonra sıradakiler (3. önde ise 3,1,2)
+  assert.deepEqual(slots(rotateKeys(E3, { runs: [R('2026-11-08T13:30:00Z', 2)] }, FROM)), [3, 1, 2]);
+  // elle deneme turu (force) ve yuvasız eski kayıtlar sırayı değiştirmez
+  assert.deepEqual(slots(rotateKeys(E3, { runs: [R('2026-11-08T07:30:00Z', 1), R('2026-11-08T09:00:00Z', 3, true), { at: '2026-11-08T10:00:00Z', ok: true, force: false }] }, FROM)), [2, 3, 1]);
+  // yedeğe düşen tur: tur 2. anahtarla bittiyse sıradaki 3. olur
+  assert.deepEqual(slots(rotateKeys(E3, { runs: [R('2026-11-08T07:30:00Z', 2)] }, FROM)), [3, 1, 2]);
+  // seyrek yuvalar (1 ve 3) ve tek anahtar
+  const E13 = [{ k: KA, slot: 1 }, { k: KC, slot: 3 }];
+  assert.deepEqual(slots(rotateKeys(E13, { runs: [R('2026-11-08T07:30:00Z', 1)] }, FROM)), [3, 1]);
+  assert.deepEqual(slots(rotateKeys(E13, { runs: [R('2026-11-08T07:30:00Z', 3)] }, FROM)), [1, 3]);
+  assert.deepEqual(slots(rotateKeys([{ k: KB, slot: 2 }], { runs: [R('2026-11-08T07:30:00Z', 2)] }, FROM)), [2]);
+  // 2. anahtarın kredisi bitti (işaretli): sıra 2'ye gelse bile 3 ve 1 kendi aralarında döner, 2 en sona kalır
+  const bad = { badKeys: { [keyFp(KB)]: { at: '2026-11-08T07:31:00Z', why: 'kredi' } } };
+  const now = new Date('2026-11-08T13:30:00Z');
+  const pick = (runs) => { const o = rotateKeys(E3, { runs }, FROM); return orderKeys(o.map((e) => e.k), bad, now).map((k) => o.find((e) => e.k === k).slot); };
+  assert.deepEqual(pick([R('2026-11-08T07:30:00Z', 1)]), [3, 1, 2]);   // sıra 2'de ama 2 bitik → 3 öncelikli
+  assert.deepEqual(pick([R('2026-11-08T13:30:00Z', 3)]), [1, 3, 2]);
+  assert.deepEqual(pick([R('2026-11-08T13:30:00Z', 1)]), [3, 1, 2]);
+  // iki anahtar bitik → kalan tek anahtar kullanılır, bitikler yedekte sona alınır
+  const bad2 = { badKeys: { [keyFp(KA)]: { at: '2026-11-08T07:31:00Z' }, [keyFp(KB)]: { at: '2026-11-08T07:31:00Z' } } };
+  const o3 = rotateKeys(E3, { runs: [R('2026-11-08T07:30:00Z', 3)] }, FROM);
+  assert.equal(orderKeys(o3.map((e) => e.k), bad2, now)[0], KC);
+});
+
+test('kuru tur (--dry): sınırlara uyar, kredi harcamaz, hiçbir sorgu yapmaz, dosya yazmaz; günlük sınır dolmuşsa normal gibi atlar', async () => {
+  const dir = tmp();
+  const fc = fakeClient(handlerFor());
+  const logs = [];
+  const out = await run({ makeClient: () => fc, cfg: CFG, dir, now: T1, dry: true, log: (m) => logs.push(m) });
+  assert.equal(out.dry, true); assert.equal(fc.calls.length, 0);
+  assert.ok(logs.some((m) => /KURU TUR/.test(m)));
+  assert.ok(!fs.existsSync(path.join(dir, 'data/prices.json')) && !fs.existsSync(path.join(dir, 'data/state.json')), 'kuru tur kayıt bırakmaz');
+  // günlük sınır dolu: kuru tur da atlar
+  fs.mkdirSync(path.join(dir, 'data'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'data/state.json'), JSON.stringify({ runs: [{ at: '2026-11-05T03:30:00Z', credits: 80, ok: true, force: false }, { at: '2026-11-05T11:30:00Z', credits: 80, ok: true, force: false }] }));
+  const out2 = await run({ makeClient: () => fc, cfg: CFG, dir, now: new Date('2026-11-05T12:00:00Z'), dry: true, log: () => {} });
+  assert.equal(out2.skipped, 'tur-siniri'); assert.equal(fc.calls.length, 0);
 });
 
 test('uçtan uca: anahtar bitince tur yedek anahtarla sürer; işaret durum dosyasına parmak iziyle yazılır; anahtarın kendisi hiçbir dosyaya yazılmaz', async () => {

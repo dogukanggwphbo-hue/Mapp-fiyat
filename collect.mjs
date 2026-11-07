@@ -1,4 +1,4 @@
-// Fiyat toplama orkestratörü. GitHub Actions günde 2 kez çalıştırır; uygulama açıldığında HİÇBİR sorgu yapılmaz.
+// Fiyat toplama orkestratörü. Günde 2 tur (10:30 ve 16:30); her turda sıradaki API anahtarı öncelikli olur (1 → 2 → 3 → 1 …); uygulama açıldığında HİÇBİR sorgu yapılmaz.
 // Çıktı: data/prices.json (uygulamanın okuduğu doğrulanmış dosya) ve data/state.json (günlük sınır kaydı).
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -25,6 +25,22 @@ export function orderKeys(keys, state, now = new Date()) {
   return keys.filter((k) => !isBad(k)).concat(keys.filter(isBad));
 }
 
+/**
+ * Sıralı dönüş: son NORMAL (deneme olmayan) turda kullanılan yuvadan sonraki anahtar bu turda öncelikli olur: 1 → 2 → 3 → 1 …
+ * Yuvalar seyrek olabilir (ör. yalnızca 1 ve 3 tanımlı). `from` (ISO tarih) öncesi turlar sayılmaz: dönüş o tarihten itibaren ilk anahtarla başlar.
+ * Kullanılamaz (kredisi biten) anahtarı sona atmak orderKeys'in işidir; kalan anahtarlar kendi aralarında dönmeye devam eder.
+ */
+export function rotateKeys(entries, state, from) {
+  const es = entries.slice().sort((a, b) => a.slot - b.slot);
+  if (es.length < 2) return es;
+  const t0 = from ? Date.parse(from) : 0;
+  const last = ((state && state.runs) || []).filter((r) => !r.force && r.slot && Date.parse(r.at) >= t0)
+    .reduce((m, r) => (!m || Date.parse(r.at) > Date.parse(m.at) ? r : m), null);
+  if (!last) return es;
+  const i = es.findIndex((e) => e.slot > last.slot);
+  return i <= 0 ? es : es.slice(i).concat(es.slice(0, i));
+}
+
 const KEY_NAMES = ['REEFAPI_KEY', 'REEFAPI_KEY_2', 'REEFAPI_KEY_3'];
 /**
  * Ortamdaki anahtarları öncelik sırasıyla okur. REEFAPI_ONLY=2|3 (elle deneme turu): yalnızca o yuvadaki anahtar kullanılır, yedeğe geçilmez.
@@ -37,7 +53,7 @@ export function pickKeys(env) {
   return { entries: all.filter((e, i, a) => a.findIndex((x) => x.k === e.k) === i), only: 0, missing: false };
 }
 
-export async function run({ makeClient, cfg, dir, now = new Date(), force = false, log = console.log }) {
+export async function run({ makeClient, cfg, dir, now = new Date(), force = false, dry = false, log = console.log }) {
   const feedPath = path.join(dir, 'data/prices.json');
   const statePath = path.join(dir, 'data/state.json');
   const prev = readJson(feedPath, emptyFeed());
@@ -62,6 +78,10 @@ export async function run({ makeClient, cfg, dir, now = new Date(), force = fals
   const dayLeft = force ? L.maxCreditsPerRun : L.maxCreditsPerDay - spentToday;
   if (dayLeft <= 0) { log('Günlük kredi sınırı doldu. Sorgu yapılmadı.'); return { skipped: 'kredi-siniri' }; }
   const client = makeClient(Math.min(L.maxCreditsPerRun, dayLeft), state);
+  if (dry) {
+    log(`KURU TUR: kredi harcanmadı, mağazalara sorgu yapılmadı. Gerçek tur olsaydı çalışırdı (bugün ${today.length}/${L.maxRunsPerDay} tur, ${spentToday} kredi).`);
+    return { dry: true };
+  }
 
   // 2) Mağaza başına bağımsız toplama
   const scope = cfg.scope.filter((c) => CATS.includes(c));
@@ -159,16 +179,20 @@ async function main() {
   const cfg = readJson(path.join(dir, 'config.json'), null);
   if (!cfg) throw new Error('config.json okunamadı');
   const force = process.argv.includes('--force');
+  const dry = process.argv.includes('--dry'); // kuru tur: zamanlama/anahtar sırası denemesi, kredi harcamaz
   // Anahtarlar öncelik sırasıyla: REEFAPI_KEY, REEFAPI_KEY_2, REEFAPI_KEY_3. Biri biterse/geçersizse sıradaki ile kesintisiz devam edilir.
   const pk = pickKeys(process.env);
   console.log('Anahtar parmak izleri: ' + (pk.entries.map((e) => `${e.slot}=${keyFp(e.k)}`).join(' ') || 'yok'));
   if (pk.only) console.log(`Deneme turu: yalnızca ${pk.only}. anahtar kullanılır, yedeğe geçilmez.` + (pk.missing ? ` HATA: REEFAPI_KEY_${pk.only} gizli kasada tanımlı değil.` : ''));
   const out = await run({
     makeClient: (max, state) => {
-      const ordered = orderKeys(pk.entries.map((e) => e.k), state, new Date());
-      return createClient({ keys: ordered, slots: ordered.map((k) => pk.entries.find((e) => e.k === k).slot), maxCredits: max });
+      const rot = rotateKeys(pk.entries, state, cfg.keyRotationFrom);
+      const ordered = orderKeys(rot.map((e) => e.k), state, new Date());
+      const slots = ordered.map((k) => rot.find((e) => e.k === k).slot);
+      console.log('Bu turun anahtar sırası: ' + (ordered.map((k, i) => `${slots[i]}. anahtar (${keyFp(k)})`).join(' → ') || 'yok'));
+      return createClient({ keys: ordered, slots, maxCredits: max });
     },
-    cfg, dir, force,
+    cfg, dir, force, dry,
   });
   if (out.problems && out.problems.length) process.exitCode = 1;
   // Tek mağazanın hatası işi kırmaz (son başarılı veri korunur, durum prices.json'da görünür).

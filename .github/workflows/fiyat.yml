@@ -14,6 +14,11 @@ on:
         description: 'Deneme turu: günlük sınırı yoksay (kredi harcar, ama 14:00 turunun hakkından düşmez)'
         type: boolean
         default: false
+      key_slot:
+        description: 'Anahtar: auto = normal sıra (1. anahtar, bitince 2.); 2 veya 3 = yalnızca o yedek anahtarla dene (yedeğe geçilmez)'
+        type: choice
+        options: [auto, '2', '3']
+        default: auto
 
 permissions:
   contents: write
@@ -39,6 +44,7 @@ jobs:
           REEFAPI_KEY: ${{ secrets.REEFAPI_KEY }}
           REEFAPI_KEY_2: ${{ secrets.REEFAPI_KEY_2 }}   # isteğe bağlı yedek anahtarlar: ilki biterse/geçersizse otomatik devreye girer
           REEFAPI_KEY_3: ${{ secrets.REEFAPI_KEY_3 }}
+          REEFAPI_ONLY: ${{ inputs.key_slot == 'auto' && '' || inputs.key_slot }}
         run: node collect.mjs ${{ inputs.force && '--force' || '' }}
       - name: Kaydet
         if: always()

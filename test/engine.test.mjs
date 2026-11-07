@@ -11,7 +11,7 @@ import { mergeItems, flagOutliers, istDay } from '../lib/store.mjs';
 import { createClient, ReefError, keyFp, keyProblem, isFatal } from '../lib/reef.mjs';
 import * as mmc from '../collectors/mediamarkt.mjs';
 import * as tkc from '../collectors/teknosa.mjs';
-import { run, orderKeys } from '../collect.mjs';
+import { run, orderKeys, pickKeys } from '../collect.mjs';
 import { MM, MMX, TK, VT, fakeClient } from './fixtures.mjs';
 import * as vtc from '../collectors/vatan.mjs';
 import { linkItems, modelParts } from '../lib/link.mjs';
@@ -327,6 +327,17 @@ test('anahtar sırası: son 24 saatte kredisi biten anahtar sona alınır, 24 sa
   assert.deepEqual(orderKeys([KA, KB], { badKeys: { [keyFp(KA)]: { at: '2026-11-06T06:00:00Z', why: 'kredi' } } }, now), [KA, KB]);
   assert.deepEqual(orderKeys([KA, KB], { badKeys: { [keyFp(KA)]: { at: '2026-11-07T06:00:00Z' }, [keyFp(KB)]: { at: '2026-11-07T07:00:00Z' } } }, now), [KA, KB]);
   assert.deepEqual(orderKeys([KA], {}, now), [KA]); assert.deepEqual(orderKeys([], null, now), []);
+});
+
+test('anahtar seçimi: normal sırada 1,2,3; REEFAPI_ONLY=2 yalnızca 2. anahtarı kullanır (yedeğe geçmez); yuva boşsa eksik bildirilir', () => {
+  const env = { REEFAPI_KEY: KA, REEFAPI_KEY_2: KB, REEFAPI_KEY_3: '' };
+  assert.deepEqual(pickKeys(env).entries, [{ k: KA, slot: 1 }, { k: KB, slot: 2 }]);
+  assert.deepEqual(pickKeys({ ...env, REEFAPI_ONLY: '2' }), { entries: [{ k: KB, slot: 2 }], only: 2, missing: false });
+  assert.deepEqual(pickKeys({ ...env, REEFAPI_ONLY: '3' }), { entries: [], only: 3, missing: true });
+  assert.equal(pickKeys({ ...env, REEFAPI_ONLY: '' }).only, 0); assert.equal(pickKeys({ ...env, REEFAPI_ONLY: 'auto' }).only, 0);
+  assert.deepEqual(pickKeys({ REEFAPI_KEY: KA, REEFAPI_KEY_2: KA }).entries, [{ k: KA, slot: 1 }], 'aynı anahtar iki kez eklenirse tek sayılır');
+  const cl = createClient({ keys: [KB, KA], slots: [2, 1], fetchImpl: async () => okRes(), sleep: async () => {} });
+  assert.equal(cl.activeSlot, 2);
 });
 
 test('uçtan uca: anahtar bitince tur yedek anahtarla sürer; işaret durum dosyasına parmak iziyle yazılır; anahtarın kendisi hiçbir dosyaya yazılmaz', async () => {

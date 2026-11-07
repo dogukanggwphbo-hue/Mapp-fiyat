@@ -25,6 +25,18 @@ export function orderKeys(keys, state, now = new Date()) {
   return keys.filter((k) => !isBad(k)).concat(keys.filter(isBad));
 }
 
+const KEY_NAMES = ['REEFAPI_KEY', 'REEFAPI_KEY_2', 'REEFAPI_KEY_3'];
+/**
+ * Ortamdaki anahtarları öncelik sırasıyla okur. REEFAPI_ONLY=2|3 (elle deneme turu): yalnızca o yuvadaki anahtar kullanılır, yedeğe geçilmez.
+ * Dönen: { entries: [{k, slot}], only, missing }
+ */
+export function pickKeys(env) {
+  const all = KEY_NAMES.map((n, i) => ({ k: String(env[n] || '').trim(), slot: i + 1 })).filter((e) => e.k);
+  const only = /^[23]$/.test(String(env.REEFAPI_ONLY || '').trim()) ? Number(String(env.REEFAPI_ONLY).trim()) : 0;
+  if (only) { const e = all.find((x) => x.slot === only); return { entries: e ? [e] : [], only, missing: !e }; }
+  return { entries: all.filter((e, i, a) => a.findIndex((x) => x.k === e.k) === i), only: 0, missing: false };
+}
+
 export async function run({ makeClient, cfg, dir, now = new Date(), force = false, log = console.log }) {
   const feedPath = path.join(dir, 'data/prices.json');
   const statePath = path.join(dir, 'data/state.json');
@@ -135,7 +147,7 @@ export async function run({ makeClient, cfg, dir, now = new Date(), force = fals
   }
   if (client.spent > 0 || anyFresh) {
     const keep = Date.parse(nowIso) - 30 * 86400000;
-    state.runs = (state.runs || []).filter((r) => Date.parse(r.at) >= keep).concat([{ at: nowIso, credits: client.spent, ok: anyFresh, force: !!force }]);
+    state.runs = (state.runs || []).filter((r) => Date.parse(r.at) >= keep).concat([{ at: nowIso, credits: client.spent, ok: anyFresh, force: !!force, ...(client.activeFp ? { fp: client.activeFp } : {}), ...(client.activeSlot ? { slot: client.activeSlot } : {}) }]);
     writeJson(statePath, state, 1);
   } else if (keyChanged) writeJson(statePath, state, 1);
   log(`Bitti · bu tur ${client.spent} kredi · bugün toplam ${spentToday + client.spent} · ${feed.items.length} kayıt · ${istDay(now, cfg.tz)}`);
@@ -148,8 +160,16 @@ async function main() {
   if (!cfg) throw new Error('config.json okunamadı');
   const force = process.argv.includes('--force');
   // Anahtarlar öncelik sırasıyla: REEFAPI_KEY, REEFAPI_KEY_2, REEFAPI_KEY_3. Biri biterse/geçersizse sıradaki ile kesintisiz devam edilir.
-  const keys = ['REEFAPI_KEY', 'REEFAPI_KEY_2', 'REEFAPI_KEY_3'].map((n) => String(process.env[n] || '').trim()).filter((k, i, a) => k && a.indexOf(k) === i);
-  const out = await run({ makeClient: (max, state) => createClient({ keys: orderKeys(keys, state, new Date()), maxCredits: max }), cfg, dir, force });
+  const pk = pickKeys(process.env);
+  console.log('Anahtar parmak izleri: ' + (pk.entries.map((e) => `${e.slot}=${keyFp(e.k)}`).join(' ') || 'yok'));
+  if (pk.only) console.log(`Deneme turu: yalnızca ${pk.only}. anahtar kullanılır, yedeğe geçilmez.` + (pk.missing ? ` HATA: REEFAPI_KEY_${pk.only} gizli kasada tanımlı değil.` : ''));
+  const out = await run({
+    makeClient: (max, state) => {
+      const ordered = orderKeys(pk.entries.map((e) => e.k), state, new Date());
+      return createClient({ keys: ordered, slots: ordered.map((k) => pk.entries.find((e) => e.k === k).slot), maxCredits: max });
+    },
+    cfg, dir, force,
+  });
   if (out.problems && out.problems.length) process.exitCode = 1;
   // Tek mağazanın hatası işi kırmaz (son başarılı veri korunur, durum prices.json'da görünür).
   // Ama hiçbir mağaza çalışmadıysa (ör. anahtar eksik) iş KIRMIZI biter ki fark edilsin.

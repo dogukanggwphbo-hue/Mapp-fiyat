@@ -13,6 +13,10 @@ Uygulama bu dosyayı okur; uygulama açıldığında hiçbir mağazaya sorgu at�
   GitHub > Settings > Secrets and variables > Actions > New repository secret > Name: `REEFAPI_KEY_2` (ya da `_3`), Secret: yeni anahtar.
 - Zamanlama: 10:25 ve 16:25'te başlar (tur birkaç dakika sürer, veri 10:30 / 16:30'da güncel olur); 30 dakika sonrasına yedek tur konur, asıl tur çalıştıysa yedek kendiliğinden atlanır (kredi harcamaz). GitHub'ın zamanlayıcısı geç kalabileceği için aynı saatlerde GitHub'dan bağımsız bir zamanlanmış görev de iş akışını başlatır.
 - Elle deneme: Actions > Fiyat güncelle > Run workflow. `dry` = kuru tur (kredi harcamaz, yalnızca çalışıp çalışmayacağını ve anahtar sırasını gösterir), `force` = sınırı yoksayan gerçek deneme turu, `key_slot` = yalnızca 2. ya da 3. anahtarla dene.
+- MediaMarkt tamamlama turu: MediaMarkt'ın anahtar sözcük aramaları eksiksiz değildir (sonuç listesi sınırlıdır, sıra turdan tura kayar); satışta olan bazı ürünler genel aramada hiç görünmeyebilir (ör. Tab S10 FE+ Mavi 12/256, Buds4 Siyah).
+  Genel taramadan sonra, Vatan/Teknosa'da bulunan ama bu turda MediaMarkt'ta görülmeyen barkodlu ürünler için barkodun kendisiyle doğrudan arama yapılır (sorgu başına 2 kredi, tur başına en fazla 12 sorgu; `config.json` > `stores.mediamarkt.gap`).
+  Kabul kuralı aynıdır: yalnızca MediaMarkt'ın kendi satışı (`seller.type = retailer`); pazaryeri satıcısı yine alınmaz. Bulunamayan ya da yalnızca pazaryerinde olan ürünler `data/state.json` içindeki `gaps` kaydında tutulur ve 3 / 7 gün boyunca yeniden aranmaz (kredi israfı olmasın).
+  Genel taramanın bulamadığı ama barkodla bulunan ürünler her turda yeniden aranır (fiyatı taze kalsın, önbellekten düşmesin). Genel tarama çökmüşse ya da tur bütçesi dolmuşsa tamamlama atlanır; tur bozulmaz. Sonuç `prices.json` > `run.stores.mediamarkt.gap` içinde görünür.
 - Günlük sınır: en fazla 2 tur; tur başına 110, gün başına 220 kredi (`config.json`). İki tur arası en az 3 saat.
 
 Veri kaynağı ReefAPI'dir; mağazaların resmi API'si değildir.

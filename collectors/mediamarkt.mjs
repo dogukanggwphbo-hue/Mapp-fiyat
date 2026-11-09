@@ -119,3 +119,82 @@ export async function collect({ client, cfg, scope, now }) {
     budgetStop: error instanceof BudgetError,
   };
 }
+
+/**
+ * Tamamlama turu (barkodla doğrudan arama).
+ * MediaMarkt'ın anahtar sözcük aramaları eksiksiz değildir: sonuç listesi sınırlıdır ve sıra/sayfa turdan tura kayar; bu yüzden mağazanın
+ * satışta olan bazı ürünleri genel aramalarda hiç görünmeyebilir (ör. Tab S10 FE+ Mavi 12/256, Buds4 Siyah). Genel taramadan sonra, DİĞER
+ * kanallarda bulunan ama bu turda MediaMarkt'ta görülmeyen barkodlu ürünler için barkodun kendisiyle arama yapılır (MediaMarkt aramasında
+ * barkod tam eşleşir, tek sonuç döner: sorgu başına 1 çağrı). Kabul kuralı aynıdır: pazaryeri satıcısı yine alınmaz.
+ * Sonuç (verdict): 'bulundu' | 'pazaryeri' (yalnızca pazaryeri satıcıda var) | 'yok' (arama sonuç vermedi).
+ * Son ikisi durum dosyasında "olumsuz önbellek"e yazılır; her turda aynı ürünler için kredi harcanmaz (pickGapTargets).
+ */
+const DAY = 86400e3;
+const isEan = (k) => /^\d{8,14}$/.test(String(k || ''));
+
+/**
+ * Bu turda aranacak barkodları seçer.
+ * items: o ana kadarki birleşik kayıtlar; taze = bu turun zamanı (nowIso) damgalı kayıt. cache: { [barkod]: { at, why } }.
+ * Önce iki ya da daha çok kanalda bulunanlar (satışta olma olasılığı yüksek), sonra barkod sırasıyla.
+ */
+export function pickGapTargets({ items, nowIso, cache = {}, gap = {}, now }) {
+  const fresh = (i) => i.checkedAt === nowIso;
+  const have = new Set(items.filter((i) => i.ch === STORE && fresh(i)).map((i) => i.key));
+  const by = new Map();
+  for (const i of items) {
+    if (i.ch === STORE || !fresh(i) || i.inStock === false || !isEan(i.key)) continue;
+    if (!by.has(i.key)) by.set(i.key, new Set());
+    by.get(i.key).add(i.ch);
+  }
+  const t = (now instanceof Date ? now : new Date(now)).getTime();
+  const ttl = (c) => (c && c.why === 'pazaryeri' ? (gap.retryMarketplaceDays ?? 7) : (gap.retryNotFoundDays ?? 3)) * DAY;
+  const missing = [...by].filter(([k]) => !have.has(k));
+  const targets = [];
+  let cached = 0;
+  for (const [k, chs] of missing) {
+    const c = cache[k];
+    if (c && t - Date.parse(c.at) < ttl(c)) { cached++; continue; }
+    targets.push([k, chs.size]);
+  }
+  targets.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  return { targets: targets.map((x) => x[0]), missing: missing.length, cached };
+}
+
+export async function completeGaps({ client, cfg, scope, now, targets, have = new Set() }) {
+  const nowIso = now.toISOString();
+  const stats = { checked: 0, found: 0, marketplace: 0, none: 0, credits: 0, error: null, budgetStop: false };
+  const verdicts = {};
+  const items = new Map();
+  const start = client.spent;
+  for (const key of targets) {
+    let r;
+    try {
+      r = await client.call('mediamarkt', 'search', { query: key, country: cfg.country, brand: cfg.brand }, { cost: cfg.creditsPerCall });
+    } catch (e) {
+      if (e instanceof BudgetError) { stats.budgetStop = true; break; } // bütçe doldu: tur bozulmaz, kalanlar sonraki tura
+      if (isEmptyResult(e)) { stats.checked++; stats.none++; verdicts[key] = 'yok'; continue; }
+      if (isFatal(e)) { stats.error = String(e.message || e); break; } // kredi/yetki: dur
+      stats.error = stats.error || String(e && e.message || e); continue; // geçici hata: bu barkod önbelleğe yazılmaz, sonraki turda yeniden denenir
+    }
+    stats.checked++;
+    const d = (r && r.data) || {};
+    const rows = Array.isArray(d.results) ? d.results : [];
+    let got = false, mp = false;
+    for (const row of rows) {
+      const why = accept(row);
+      if (why) {
+        if (why === 'pazaryeri-satici' && String(row && row.ean || '').replace(/\D/g, '') === key) mp = true;
+        continue;
+      }
+      const it = buildItem(toFields(row), nowIso);
+      if (!scope.includes(it.cat) || validateItem(it)) continue;
+      if (it.key === key) got = true;
+      if (!have.has(it.key) && !items.has(it.key)) items.set(it.key, it);
+    }
+    if (got) { stats.found++; verdicts[key] = 'bulundu'; }
+    else if (mp) { stats.marketplace++; verdicts[key] = 'pazaryeri'; }
+    else { stats.none++; verdicts[key] = 'yok'; }
+  }
+  stats.credits = client.spent - start;
+  return { items: [...items.values()], verdicts, stats };
+}

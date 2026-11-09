@@ -89,6 +89,7 @@ export async function run({ makeClient, cfg, dir, now = new Date(), force = fals
   let items = prev.items.slice();
   const runInfo = { at: nowIso, stores: {} };
   let anyFresh = false;
+  const results = {};
 
   for (const c of COLLECTORS) {
     const sc = cfg.stores[c.STORE] || { enabled: false };
@@ -101,6 +102,7 @@ export async function run({ makeClient, cfg, dir, now = new Date(), force = fals
         res = { store: c.STORE, status: 'error', items: [], stats: { pages: 0, rows: 0, accepted: 0, rejected: {}, credits: 0 }, error: String(e && e.message || e) };
       }
     }
+    results[c.STORE] = res;
     const old = prev.sites[c.STORE] || {};
     const prevStoreItems = items.filter((i) => i.ch === c.STORE);
     const others = items.filter((i) => i.ch !== c.STORE);
@@ -120,6 +122,39 @@ export async function run({ makeClient, cfg, dir, now = new Date(), force = fals
     runInfo.stores[c.STORE] = { status: res.status, ...res.stats };
     log(`[${c.STORE}] ${res.status} · ${res.stats.pages} sayfa · ${res.stats.rows} satır · ${res.stats.accepted} kabul · ${res.stats.credits} kredi` +
       (Object.keys(res.stats.rejected).length ? ' · elenen: ' + JSON.stringify(res.stats.rejected) : '') + (res.error ? ' · HATA: ' + res.error : '') + (res.note ? ' · ' + res.note : ''));
+  }
+
+  // 2b) MediaMarkt tamamlama turu: genel aramalarda görünmeyen ürünler için barkodla doğrudan arama (mediamarkt.mjs başındaki açıklamaya bakın).
+  //     Yalnızca MediaMarkt genel taraması başarılıysa ve başka kanallardan taze kayıt varsa çalışır; bütçe dolarsa tur bozulmaz.
+  const mmCfg = cfg.stores.mediamarkt || {};
+  const mmRes = results.mediamarkt;
+  if (mmCfg.enabled && mmCfg.gap && mmCfg.gap.enabled !== false && mmRes && mmRes.status === 'ok' && !mmRes.budgetStop) {
+    state.gaps = state.gaps || {};
+    const cache = state.gaps.mediamarkt = state.gaps.mediamarkt || {};
+    const pick = mediamarkt.pickGapTargets({ items, nowIso, cache, gap: mmCfg.gap, now });
+    const targets = pick.targets.slice(0, Math.max(0, mmCfg.gap.maxQueries ?? 12));
+    const info = { targets: pick.missing, cached: pick.cached, queried: 0, found: 0, marketplace: 0, none: 0, deferred: pick.targets.length - targets.length, credits: 0 };
+    if (targets.length) {
+      const have = new Set(items.filter((i) => i.ch === 'mediamarkt' && i.checkedAt === nowIso).map((i) => i.key));
+      const gr = await mediamarkt.completeGaps({ client, cfg: mmCfg, scope, now, targets, have });
+      Object.assign(info, { queried: gr.stats.checked, found: gr.stats.found, marketplace: gr.stats.marketplace, none: gr.stats.none, credits: gr.stats.credits });
+      if (gr.stats.budgetStop) info.budgetStop = true;
+      if (gr.stats.error) info.error = String(gr.stats.error).slice(0, 200);
+      if (gr.items.length) {
+        const mmNow = items.filter((i) => i.ch === 'mediamarkt');
+        const merged = mergeItems(mmNow, gr.items, nowIso, L.retainDays);
+        items = items.filter((i) => i.ch !== 'mediamarkt').concat(merged);
+        sites.mediamarkt.count = merged.length;
+      }
+      for (const [k, v] of Object.entries(gr.verdicts)) { if (v === 'bulundu') delete cache[k]; else cache[k] = { at: nowIso, why: v }; }
+    }
+    for (const k of Object.keys(cache)) if (Date.parse(nowIso) - Date.parse(cache[k].at) > 30 * 86400e3) delete cache[k];
+    if (!Object.keys(cache).length) delete state.gaps.mediamarkt;
+    if (!Object.keys(state.gaps).length) delete state.gaps;
+    runInfo.stores.mediamarkt.gap = info;
+    const gnote = info.queried ? `Tamamlama: ${info.queried} üründe barkodla arandı, ${info.found} bulundu` + (info.marketplace ? `, ${info.marketplace} yalnızca pazaryeri satıcıda` : '') + (info.deferred ? `, ${info.deferred} ürün sonraki tura kaldı` : '') + '.' : null;
+    if (gnote) sites.mediamarkt.note = [sites.mediamarkt.note, gnote].filter(Boolean).join(' · ');
+    log(`[mediamarkt] tamamlama · ${info.targets} üründe eksik görüldü · ${info.cached} önbellekte (yakın zamanda denendi) · ${info.queried} arandı · ${info.found} bulundu · ${info.marketplace} pazaryeri · ${info.none} yok · ${info.credits} kredi` + (info.deferred ? ` · ${info.deferred} sonraki tura` : '') + (info.budgetStop ? ' · bütçe doldu' : '') + (info.error ? ' · HATA: ' + info.error : ''));
   }
 
   // 3) Kanallar arası eşleştirme (barkodsuz kayıtlar), aykırı fark işareti, sıralama, doğrulama

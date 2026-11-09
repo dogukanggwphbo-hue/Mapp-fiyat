@@ -61,6 +61,13 @@
       "country": "tr",
       "brand": "SAMSUNG",
       "creditsPerCall": 2,
+      "gap": {
+        "enabled": true,
+        "maxQueries": 12,
+        "retryNotFoundDays": 3,
+        "retryMarketplaceDays": 7,
+        "note": "Tamamlama turu: genel aramada görünmeyen ama Vatan/Teknosa'da olan barkodlu ürünler barkodla doğrudan aranır (sorgu başına creditsPerCall kredi). Bulunamayan/yalnızca pazaryerinde olanlar retry* gün boyunca yeniden aranmaz."
+      },
       "queries": [
         {
           "q": "samsung galaxy akıllı telefon",

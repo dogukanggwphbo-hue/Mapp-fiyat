@@ -21,9 +21,9 @@ on:
         type: boolean
         default: false
       key_slot:
-        description: 'Anahtar: auto = normal sıra (1 → 2 → 3 sırayla); 2 veya 3 = yalnızca o anahtarla dene (yedeğe geçilmez)'
+        description: 'Anahtar: auto = normal sıra (1 → 2 → … → 6 sırayla); 2-6 = yalnızca o anahtarla dene (yedeğe geçilmez)'
         type: choice
-        options: [auto, '2', '3']
+        options: [auto, '2', '3', '4', '5', '6']
         default: auto
 
 permissions:
@@ -53,6 +53,9 @@ jobs:
           REEFAPI_KEY: ${{ secrets.REEFAPI_KEY }}
           REEFAPI_KEY_2: ${{ secrets.REEFAPI_KEY_2 }}   # isteğe bağlı yedek anahtarlar: ilki biterse/geçersizse otomatik devreye girer
           REEFAPI_KEY_3: ${{ secrets.REEFAPI_KEY_3 }}
+          REEFAPI_KEY_4: ${{ secrets.REEFAPI_KEY_4 }}
+          REEFAPI_KEY_5: ${{ secrets.REEFAPI_KEY_5 }}
+          REEFAPI_KEY_6: ${{ secrets.REEFAPI_KEY_6 }}
           REEFAPI_ONLY: ${{ inputs.key_slot == 'auto' && '' || inputs.key_slot }}
         run: node collect.mjs ${{ inputs.force && '--force' || '' }} ${{ inputs.dry && '--dry' || '' }}
       - name: Kaydet

@@ -1,4 +1,4 @@
-// Fiyat toplama orkestratörü. Günde 2 tur (10:30 ve 16:30); her turda sıradaki API anahtarı öncelikli olur (1 → 2 → 3 → 1 …); uygulama açıldığında HİÇBİR sorgu yapılmaz.
+// Fiyat toplama orkestratörü. Günde 2 tur (10:30 ve 16:30); her turda sıradaki API anahtarı öncelikli olur (1 → 2 → 3 → 4 → 5 → 6 → 1 …); uygulama açıldığında HİÇBİR sorgu yapılmaz.
 // Çıktı: data/prices.json (uygulamanın okuduğu doğrulanmış dosya) ve data/state.json (günlük sınır kaydı).
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -27,7 +27,7 @@ export function orderKeys(keys, state, now = new Date()) {
 }
 
 /**
- * Sıralı dönüş: son NORMAL (deneme olmayan) turda kullanılan yuvadan sonraki anahtar bu turda öncelikli olur: 1 → 2 → 3 → 1 …
+ * Sıralı dönüş: son NORMAL (deneme olmayan) turda kullanılan yuvadan sonraki anahtar bu turda öncelikli olur: 1 → 2 → … → 6 → 1 …
  * Yuvalar seyrek olabilir (ör. yalnızca 1 ve 3 tanımlı). `from` (ISO tarih) öncesi turlar sayılmaz: dönüş o tarihten itibaren ilk anahtarla başlar.
  * Kullanılamaz (kredisi biten) anahtarı sona atmak orderKeys'in işidir; kalan anahtarlar kendi aralarında dönmeye devam eder.
  */
@@ -42,14 +42,14 @@ export function rotateKeys(entries, state, from) {
   return i <= 0 ? es : es.slice(i).concat(es.slice(0, i));
 }
 
-const KEY_NAMES = ['REEFAPI_KEY', 'REEFAPI_KEY_2', 'REEFAPI_KEY_3'];
+const KEY_NAMES = ['REEFAPI_KEY', 'REEFAPI_KEY_2', 'REEFAPI_KEY_3', 'REEFAPI_KEY_4', 'REEFAPI_KEY_5', 'REEFAPI_KEY_6'];
 /**
- * Ortamdaki anahtarları öncelik sırasıyla okur. REEFAPI_ONLY=2|3 (elle deneme turu): yalnızca o yuvadaki anahtar kullanılır, yedeğe geçilmez.
+ * Ortamdaki anahtarları öncelik sırasıyla okur. REEFAPI_ONLY=2..6 (elle deneme turu): yalnızca o yuvadaki anahtar kullanılır, yedeğe geçilmez.
  * Dönen: { entries: [{k, slot}], only, missing }
  */
 export function pickKeys(env) {
   const all = KEY_NAMES.map((n, i) => ({ k: String(env[n] || '').trim(), slot: i + 1 })).filter((e) => e.k);
-  const only = /^[23]$/.test(String(env.REEFAPI_ONLY || '').trim()) ? Number(String(env.REEFAPI_ONLY).trim()) : 0;
+  const only = /^[2-6]$/.test(String(env.REEFAPI_ONLY || '').trim()) ? Number(String(env.REEFAPI_ONLY).trim()) : 0;
   if (only) { const e = all.find((x) => x.slot === only); return { entries: e ? [e] : [], only, missing: !e }; }
   return { entries: all.filter((e, i, a) => a.findIndex((x) => x.k === e.k) === i), only: 0, missing: false };
 }
@@ -187,7 +187,7 @@ async function main() {
   if (!cfg) throw new Error('config.json okunamadı');
   const force = process.argv.includes('--force');
   const dry = process.argv.includes('--dry'); // kuru tur: zamanlama/anahtar sırası denemesi, kredi harcamaz
-  // Anahtarlar öncelik sırasıyla: REEFAPI_KEY, REEFAPI_KEY_2, REEFAPI_KEY_3. Biri biterse/geçersizse sıradaki ile kesintisiz devam edilir.
+  // Anahtarlar öncelik sırasıyla: REEFAPI_KEY, REEFAPI_KEY_2 … REEFAPI_KEY_6. Biri biterse/geçersizse sıradaki ile kesintisiz devam edilir.
   const pk = pickKeys(process.env);
   console.log('Anahtar parmak izleri: ' + (pk.entries.map((e) => `${e.slot}=${keyFp(e.k)}`).join(' ') || 'yok'));
   if (pk.only) console.log(`Deneme turu: yalnızca ${pk.only}. anahtar kullanılır, yedeğe geçilmez.` + (pk.missing ? ` HATA: REEFAPI_KEY_${pk.only} gizli kasada tanımlı değil.` : ''));

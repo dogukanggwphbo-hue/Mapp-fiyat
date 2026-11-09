@@ -777,3 +777,26 @@ test('Teknosa normal tur: sayfa tekrarı yoksa ek istek ve ek kredi yok', async 
   assert.equal(r.stats.incomplete, undefined);
   assert.equal(r.stats.credits, 3);
 });
+
+test('altı anahtar: REEFAPI_KEY … REEFAPI_KEY_6 okunur; key_slot 2-6 desteklenir; dönüş 1→…→6→1; son tur 3. anahtarla yapıldıysa sıradaki 4. olur', () => {
+  const ks = ['K1' + 'a'.repeat(30), 'K2' + 'b'.repeat(30), 'K3' + 'c'.repeat(30), 'K4' + 'd'.repeat(30), 'K5' + 'e'.repeat(30), 'K6' + 'f'.repeat(30)];
+  const env = { REEFAPI_KEY: ks[0], REEFAPI_KEY_2: ks[1], REEFAPI_KEY_3: ks[2], REEFAPI_KEY_4: ks[3], REEFAPI_KEY_5: ks[4], REEFAPI_KEY_6: ks[5] };
+  const pk = pickKeys(env);
+  assert.deepEqual(pk.entries.map((e) => e.slot), [1, 2, 3, 4, 5, 6]);
+  for (const n of [2, 3, 4, 5, 6]) assert.deepEqual(pickKeys({ ...env, REEFAPI_ONLY: String(n) }), { entries: [{ k: ks[n - 1], slot: n }], only: n, missing: false });
+  assert.deepEqual(pickKeys({ ...env, REEFAPI_ONLY: '7' }).only, 0, '7 geçersiz: normal sıra');
+  assert.deepEqual(pickKeys({ ...env, REEFAPI_ONLY: '1' }).only, 0, '1 seçilemez: normal sıra');
+  assert.deepEqual(pickKeys({ ...env, REEFAPI_KEY_5: '' }).entries.map((e) => e.slot), [1, 2, 3, 4, 6], 'boş yuva atlanır');
+  const FROM = '2026-11-08T00:00:00+03:00';
+  const R = (at, slot) => ({ at, credits: 83, ok: true, force: false, slot });
+  assert.deepEqual(rotateKeys(pk.entries, { runs: [R('2026-11-09T07:31:00Z', 3)] }, FROM).map((e) => e.slot), [4, 5, 6, 1, 2, 3]);
+  assert.deepEqual(rotateKeys(pk.entries, { runs: [R('2026-11-09T13:30:00Z', 6)] }, FROM).map((e) => e.slot), [1, 2, 3, 4, 5, 6]);
+  const sparse = pickKeys({ ...env, REEFAPI_KEY_4: '', REEFAPI_KEY_5: '' }).entries; // 1,2,3,6
+  assert.deepEqual(rotateKeys(sparse, { runs: [R('2026-11-09T07:31:00Z', 3)] }, FROM).map((e) => e.slot), [6, 1, 2, 3]);
+});
+
+test('iş akışı: 4-6. anahtar gizli kasadan ortama aktarılır ve key_slot seçeneklerinde vardır', () => {
+  const y = fs.readFileSync(new URL('../.github/workflows/fiyat.yml', import.meta.url), 'utf8');
+  for (const n of ['', '_2', '_3', '_4', '_5', '_6']) assert.match(y, new RegExp(`REEFAPI_KEY${n}: \\$\\{\\{ secrets\\.REEFAPI_KEY${n} \\}\\}`));
+  assert.match(y, /options: \[auto, '2', '3', '4', '5', '6'\]/);
+});

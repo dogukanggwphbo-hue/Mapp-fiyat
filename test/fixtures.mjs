@@ -90,6 +90,7 @@ export function fakeClient(handler, { max = Infinity } = {}) {
     },
     get spent() { return st.spent; },
     get calls() { return st.calls; },
+    get remaining() { return max - st.spent; },
   };
 }
 export { ReefError };

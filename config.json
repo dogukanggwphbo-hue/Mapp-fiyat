@@ -14,7 +14,8 @@
     "maxCreditsPerRun": 110,
     "maxCreditsPerDay": 220,
     "retainDays": 3,
-    "maxPriceGap": 1.5
+    "maxPriceGap": 1.5,
+    "gapCredits": 30
   },
   "stores": {
     "teknosa": {
@@ -54,7 +55,15 @@
           "maxPages": 2
         }
       ],
-      "note": "Teknosa'da anahtar sözcük araması telefonları öne çıkarır; saat, kulaklık ve şarj aletleri bu yüzden KATEGORİ koduyla taranır (100004001 Akıllı Saat, 10000601 Bluetooth Kulaklık, 10000603 Kulak İçi Kulaklık, 100002003 Şarj Aleti)."
+      "note": "Teknosa'da anahtar sözcük araması telefonları öne çıkarır; saat, kulaklık ve şarj aletleri bu yüzden KATEGORİ koduyla taranır (100004001 Akıllı Saat, 10000601 Bluetooth Kulaklık, 10000603 Kulak İçi Kulaklık, 100002003 Şarj Aleti).",
+      "gap": {
+        "enabled": true,
+        "maxQueries": 12,
+        "retryNotFoundDays": 3,
+        "retryMarketplaceDays": 7,
+        "minChannels": 1,
+        "note": "Tamamlama turu: Teknosa'da barkodla arama çalışmaz; model adıyla aranır, sonuçtaki barkodla doğrulanır (lib/gap.mjs)."
+      }
     },
     "mediamarkt": {
       "enabled": true,
@@ -63,10 +72,11 @@
       "creditsPerCall": 2,
       "gap": {
         "enabled": true,
-        "maxQueries": 12,
+        "maxQueries": 8,
         "retryNotFoundDays": 3,
         "retryMarketplaceDays": 7,
-        "note": "Tamamlama turu: genel aramada görünmeyen ama Vatan/Teknosa'da olan barkodlu ürünler barkodla doğrudan aranır (sorgu başına creditsPerCall kredi). Bulunamayan/yalnızca pazaryerinde olanlar retry* gün boyunca yeniden aranmaz."
+        "minChannels": 1,
+        "note": "Tamamlama turu: başka kanalda görülüp bu kanalda genel aramada görünmeyen ürünler barkodla (barkodsuzsa model adıyla) doğrudan aranır; sorgu başına creditsPerCall kredi. Bulunamayan 3, yalnızca pazaryerinde olanlar 7 gün yeniden aranmaz (lib/gap.mjs)."
       },
       "queries": [
         {
@@ -128,7 +138,15 @@
           "scope": "adapter",
           "maxPages": 2
         }
-      ]
+      ],
+      "gap": {
+        "enabled": true,
+        "maxQueries": 12,
+        "retryNotFoundDays": 3,
+        "retryMarketplaceDays": 7,
+        "minChannels": 1,
+        "note": "Tamamlama turu: model adıyla (yalnızca stoktakiler) aranır; aynı model tek sorguda kapanır (lib/gap.mjs)."
+      }
     }
   },
   "channelOrder": [

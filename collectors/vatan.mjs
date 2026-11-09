@@ -9,6 +9,7 @@
 import { buildItem, classify, USED_RE } from '../lib/normalize.mjs';
 import { validateItem, SELLER_CHECK } from '../lib/validate.mjs';
 import { BudgetError, isEmptyResult, isFatal } from '../lib/reef.mjs';
+import { targetText } from '../lib/gap.mjs';
 
 export const STORE = 'vatan';
 const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -103,4 +104,16 @@ export async function collect({ client, cfg, scope, now }) {
     note: [stats.capped ? 'Sayfa sınırına ulaşıldı; bazı ürünler eksik olabilir (config.json > maxPages).' : null, stats.empty.length ? 'Sonuç dönmeyen aramalar: ' + stats.empty.join(', ') : null].filter(Boolean).join(' · ') || null,
     budgetStop: error instanceof BudgetError,
   };
+}
+
+/**
+ * Tamamlama turu bağlantısı (ortak mantık lib/gap.mjs'de). Vatan'da barkod yok; model adıyla aranır ("Galaxy Tab S10 Lite" tüm renk/depolama
+ * seçeneklerini tek sorguda getirir) ve yalnızca stoktakiler istenir. Aday satırlar hedefle özellik eşleştirmesiyle (model + depolama + renk) doğrulanır.
+ */
+export function gapRequest(t, cfg) {
+  const q = targetText(t);
+  if (!q) return null;
+  const p = { query: q, brand: cfg.brand, page: 1 };
+  if (cfg.inStockOnly) p.in_stock_only = true;
+  return p;
 }

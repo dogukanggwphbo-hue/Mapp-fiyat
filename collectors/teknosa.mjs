@@ -3,6 +3,7 @@
 import { buildItem, classify, isWebExclusive, USED_RE } from '../lib/normalize.mjs';
 import { validateItem, SELLER_CHECK } from '../lib/validate.mjs';
 import { BudgetError, ReefError, isEmptyResult, isFatal } from '../lib/reef.mjs';
+import { targetText } from '../lib/gap.mjs';
 
 export const STORE = 'teknosa';
 
@@ -119,4 +120,16 @@ export async function collect({ client, cfg, scope, now }) {
     note: [stats.capped ? 'Sayfa sınırına ulaşıldı; bazı ürünler eksik olabilir (config.json > maxPages).' : null, stats.empty.length ? 'Sonuç dönmeyen aramalar: ' + stats.empty.join(', ') : null].filter(Boolean).join(' · ') || null,
     budgetStop: error instanceof BudgetError,
   };
+}
+
+/**
+ * Tamamlama turu bağlantısı (ortak mantık lib/gap.mjs'de). Teknosa'da barkodla arama çalışmaz ("ürün listesi yok" döner); model adıyla aranır
+ * (seller=teknosa + Samsung marka kodu ile daraltılır), sonuç satırlarında barkod geldiği için hedefle barkod eşitliğiyle doğrulanır.
+ */
+export function gapRequest(t, cfg) {
+  const q = targetText(t);
+  if (!q) return null;
+  const p = { seller: cfg.seller, query: q, page: 1 };
+  if (cfg.brandCode) p.brand = cfg.brandCode;
+  return p;
 }

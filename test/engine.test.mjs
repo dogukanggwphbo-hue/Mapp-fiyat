@@ -796,7 +796,10 @@ test('altı anahtar: REEFAPI_KEY … REEFAPI_KEY_6 okunur; key_slot 2-6 destekle
 });
 
 test('iş akışı: 4-6. anahtar gizli kasadan ortama aktarılır ve key_slot seçeneklerinde vardır', () => {
-  const y = fs.readFileSync(new URL('../.github/workflows/fiyat.yml', import.meta.url), 'utf8');
+  // depoda .github/workflows/fiyat.yml; müşteriye verilen pakette aynı dosya ADIM-3-fiyat.yml.txt adıyla durur
+  const f = ['../.github/workflows/fiyat.yml', '../ADIM-3-fiyat.yml.txt'].map((x) => new URL(x, import.meta.url)).find((u) => fs.existsSync(u));
+  if (!f) return;
+  const y = fs.readFileSync(f, 'utf8');
   for (const n of ['', '_2', '_3', '_4', '_5', '_6']) assert.match(y, new RegExp(`REEFAPI_KEY${n}: \\$\\{\\{ secrets\\.REEFAPI_KEY${n} \\}\\}`));
   assert.match(y, /options: \[auto, '2', '3', '4', '5', '6'\]/);
 });

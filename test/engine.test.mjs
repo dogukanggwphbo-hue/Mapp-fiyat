@@ -816,6 +816,28 @@ test('keySlots: yalnızca 1. ve 2. anahtar sırayla kullanılır; 3-6 devre dı�
   assert.deepEqual(order([R('2026-11-11T07:29:00Z', 3)]), [1, 2], 'devre dışı yuva eski kayıtta kalsa da sıra bozulmaz');
 });
 
+test('anahtar sınaması (--probe): her anahtar ayrı sınanır, 1 kredi harcar; çalışan/geçersiz/kredisi biten/boş sonuç ayrımı; anahtar metne sızmaz', async () => {
+  const { probeKeys } = await import('../collect.mjs');
+  const K = ['P1' + 'a'.repeat(30), 'P2' + 'b'.repeat(30), 'P3' + 'c'.repeat(30), 'P4' + 'd'.repeat(30), 'P5' + 'e'.repeat(30)];
+  const seen = [];
+  const f = async (u, o) => {
+    const k = o.headers['x-api-key']; seen.push(k);
+    if (k === K[0]) return new Response(JSON.stringify({ ok: true, data: {}, meta: { charged_credits: 1 } }), { status: 200 });
+    if (k === K[1]) return errRes(401, 'Invalid API key ' + k);
+    if (k === K[2]) return errRes(402, 'insufficient credits');
+    if (k === K[3]) return errRes(403, 'forbidden');
+    return new Response(JSON.stringify({ ok: false, error: { message: 'search returned without a product grid' } }), { status: 200 });
+  };
+  const logs = [];
+  const r = await probeKeys({ entries: K.map((k, i) => ({ k, slot: i + 1 })), cfg: { stores: { vatan: { brand: 'samsung' } } }, fetchImpl: f, log: (s) => logs.push(s) });
+  assert.deepEqual(r.map((x) => x.state), ['calisiyor', 'gecersiz', 'kredi', 'yetki', 'calisiyor']);
+  assert.deepEqual(r.map((x) => x.credits), [1, 0, 0, 0, 0]);
+  assert.deepEqual(seen, K, 'her anahtar yalnızca kendisiyle ve tek kez denenir (yedeğe geçilmez)');
+  assert.equal(logs.length, 5);
+  assert.ok(!logs.join('\n').includes(K[1]), 'anahtar günlüğe sızmaz');
+  assert.match(logs[1], /Yuva 2 .*GEÇERSİZ.*HTTP 401/);
+});
+
 test('iş akışı: 4-6. anahtar gizli kasadan ortama aktarılır ve key_slot seçeneklerinde vardır', () => {
   // depoda .github/workflows/fiyat.yml; müşteriye verilen pakette aynı dosya ADIM-3-fiyat.yml.txt adıyla durur
   const f = ['../.github/workflows/fiyat.yml', '../ADIM-3-fiyat.yml.txt'].map((x) => new URL(x, import.meta.url)).find((u) => fs.existsSync(u));

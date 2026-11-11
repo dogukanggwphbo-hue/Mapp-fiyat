@@ -2,7 +2,7 @@
 // Çıktı: data/prices.json (uygulamanın okuduğu doğrulanmış dosya) ve data/state.json (günlük sınır kaydı).
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createClient, keyFp } from './lib/reef.mjs';
+import { createClient, keyFp, ReefError, isEmptyResult } from './lib/reef.mjs';
 import { readJson, writeJson, istDay, runsToday, recentRun, mergeItems, flagOutliers } from './lib/store.mjs';
 import { validateFeed, CATS, CHANNEL_NAMES, CAT_LABELS } from './lib/validate.mjs';
 import { linkItems } from './lib/link.mjs';
@@ -57,6 +57,35 @@ export function pickKeys(env, enabled) {
   const on = Array.isArray(enabled) && enabled.length ? enabled.map(Number) : null;
   const use = on ? all.filter((e) => on.includes(e.slot)) : all;
   return { entries: use.filter((e, i, a) => a.findIndex((x) => x.k === e.k) === i), only: 0, missing: false };
+}
+
+/**
+ * Anahtar sınaması (--probe): gizli kasada tanımlı HER yuvadaki anahtar (keySlots'tan bağımsız) ayrı ayrı, Vatan'a tek sayfalık 1 kredilik bir istek atar.
+ * Veri yazmaz, durum dosyasını değiştirmez; yalnızca her anahtarın çalışıp çalışmadığını bildirir. Toplam harcama en çok anahtar sayısı kadar kredidir.
+ * Dönen: [{ slot, fp, state: 'calisiyor'|'kredi'|'gecersiz'|'yetki'|'hata', status, credits, msg }]
+ */
+export async function probeKeys({ entries, cfg, fetchImpl, log = console.log }) {
+  const v = (cfg && cfg.stores && cfg.stores.vatan) || {};
+  const params = { query: 'samsung galaxy', brand: v.brand || 'samsung', page: 1 };
+  const out = [];
+  for (const e of entries) {
+    const client = createClient({ keys: [e.k], slots: [e.slot], maxCredits: 2, ...(fetchImpl ? { fetchImpl } : {}) });
+    const r = { slot: e.slot, fp: keyFp(e.k), state: 'calisiyor', status: 200, credits: 0, msg: '' };
+    try { await client.call('vatan', 'search', params, { cost: 1 }); }
+    catch (err) {
+      if (err instanceof ReefError && isEmptyResult(err)) { r.msg = 'arama boş döndü (anahtar çalışıyor)'; }
+      else {
+        r.state = err instanceof ReefError ? (err.keyProblem || 'hata') : 'hata';
+        r.status = err instanceof ReefError ? err.status : 0;
+        r.msg = String(err && err.message ? err.message : err).slice(0, 160);
+      }
+    }
+    r.credits = client.spent;
+    const lab = { calisiyor: 'ÇALIŞIYOR', kredi: 'KREDİSİ BİTMİŞ', gecersiz: 'GEÇERSİZ (ReefAPI anahtarı tanımıyor)', yetki: 'YETKİ HATASI', hata: 'HATA' }[r.state];
+    log(`Yuva ${r.slot} (${r.fp}): ${lab}${r.state === 'calisiyor' ? '' : ` · HTTP ${r.status}`} · ${r.credits} kredi${r.msg ? ' · ' + r.msg : ''}`);
+    out.push(r);
+  }
+  return out;
 }
 
 export async function run({ makeClient, cfg, dir, now = new Date(), force = false, dry = false, log = console.log }) {
@@ -197,6 +226,13 @@ async function main() {
   // Gizli kasada tanımlı bütün yuvalar listelenir; keySlots dışında kalanlar "(kapalı)" işaretlenir (anahtar kaybolup kaybolmadığını görmek için).
   const offSlot = (s) => !pk.only && Array.isArray(cfg.keySlots) && cfg.keySlots.length && !cfg.keySlots.map(Number).includes(s);
   console.log('Anahtar parmak izleri: ' + (pickKeys(process.env).entries.map((e) => `${e.slot}=${keyFp(e.k)}${offSlot(e.slot) ? '(kapalı)' : ''}`).join(' ') || 'yok'));
+  if (process.argv.includes('--probe')) { // anahtar sınaması: veri yazmaz, sıra/durum dosyasına dokunmaz
+    const all = pickKeys(process.env).entries;
+    console.log(`Anahtar sınaması: ${all.length} yuva, her biri için 1 kredilik tek istek (keySlots'tan bağımsız).`);
+    if (!all.length) console.log('Hiç anahtar tanımlı değil.');
+    await probeKeys({ entries: all, cfg });
+    return;
+  }
   if (!pk.only && Array.isArray(cfg.keySlots) && cfg.keySlots.length) console.log(`Kullanılan anahtar yuvaları (config.json > keySlots): ${cfg.keySlots.join(', ')} · diğerleri devre dışı.`);
   if (pk.only) console.log(`Deneme turu: yalnızca ${pk.only}. anahtar kullanılır, yedeğe geçilmez.` + (pk.missing ? ` HATA: REEFAPI_KEY_${pk.only} gizli kasada tanımlı değil.` : ''));
   const out = await run({

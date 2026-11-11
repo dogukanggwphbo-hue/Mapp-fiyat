@@ -20,6 +20,10 @@ on:
         description: 'Kuru tur: hiçbir sorgu yapmaz, kredi harcamaz; yalnızca tur çalışır mı ve hangi anahtar sırasıyla çalışırdı onu gösterir'
         type: boolean
         default: false
+      probe:
+        description: 'Anahtar sınaması: kasadaki her anahtara 1 kredilik tek istek atar ve çalışıp çalışmadığını gösterir; veri yazmaz'
+        type: boolean
+        default: false
       key_slot:
         description: 'Anahtar: auto = normal sıra (1 → 2 → … → 6 sırayla); 2-6 = yalnızca o anahtarla dene (yedeğe geçilmez)'
         type: choice
@@ -57,7 +61,7 @@ jobs:
           REEFAPI_KEY_5: ${{ secrets.REEFAPI_KEY_5 }}
           REEFAPI_KEY_6: ${{ secrets.REEFAPI_KEY_6 }}
           REEFAPI_ONLY: ${{ inputs.key_slot == 'auto' && '' || inputs.key_slot }}
-        run: node collect.mjs ${{ inputs.force && '--force' || '' }} ${{ inputs.dry && '--dry' || '' }}
+        run: node collect.mjs ${{ inputs.force && '--force' || '' }} ${{ inputs.dry && '--dry' || '' }} ${{ inputs.probe && '--probe' || '' }}
       - name: Kaydet
         if: always()
         run: |

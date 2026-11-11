@@ -235,17 +235,18 @@ test('yedek zamanlar: son 3 saatte başarılı tur varsa yedek ya da geç kalan 
   assert.equal(recentRun(st([yedek]), new Date('2026-11-08T09:30:00Z'), G), true);
 });
 
-test('zamanlama: iş akışı günde 2 tur: 10:25 (10:30 turu) ve 16:25 (16:30 turu) + 30 dk sonra yedekleri, Türkiye saatinde', async () => {
+test('zamanlama: iş akışı günde 3 tur: 09:55 (10:00 turu), 13:55 (14:00 turu), 18:55 (19:00 turu) + 30 dk sonra yedekleri, Türkiye saatinde', async () => {
   const fs = await import('node:fs');
   const yml = fs.readFileSync(new URL('../.github/workflows/fiyat.yml', import.meta.url), 'utf8');
   const crons = [...yml.matchAll(/^\s*-\s*cron:\s*'(\d+)\s+(\d+)\s+\*\s+\*\s+\*'/gm)].map((m) => ({ min: Number(m[1]), hr: Number(m[2]) }));
   const tr = crons.map((c) => `${String((c.hr + 3) % 24).padStart(2, '0')}:${String(c.min).padStart(2, '0')}`);
-  assert.deepEqual(tr, ['10:25', '10:55', '16:25', '16:55']);
+  assert.deepEqual(tr, ['09:55', '10:25', '13:55', '14:25', '18:55', '19:25']);
   const cfg = JSON.parse(fs.readFileSync(new URL('../config.json', import.meta.url), 'utf8'));
-  assert.equal(cfg.limits.minGapHours, 3);
-  assert.equal(cfg.limits.maxRunsPerDay, 2);
-  // yedek atlama süresi 30 dk yedek aralığından büyük, sabah-akşamüstü arası (6 saat) eksi olası 2 saat gecikmeden küçük olmalı
-  assert.ok(cfg.limits.minGapHours * 60 > 30 && cfg.limits.minGapHours <= 4);
+  assert.equal(cfg.limits.minGapHours, 2);
+  assert.equal(cfg.limits.maxRunsPerDay, 3);
+  assert.ok(cfg.limits.maxCreditsPerDay >= 3 * cfg.limits.maxCreditsPerRun, 'günlük kredi sınırı 3 turu karşılar');
+  // yedek atlama süresi 30 dk yedek aralığından büyük, en kısa tur aralığı (4 saat) eksi olası 1-2 saat gecikmeden küçük olmalı
+  assert.ok(cfg.limits.minGapHours * 60 > 30 && cfg.limits.minGapHours <= 2);
   // iş akışı her zaman main'in en güncel halini alır (sıradaki ikinci tur, birincinin tur kaydını görsün)
   assert.match(yml, /uses: actions\/checkout@v4\s+with:[\s\S]*?ref: main/);
   assert.match(yml, /--dry/);

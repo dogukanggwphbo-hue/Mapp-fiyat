@@ -11,10 +11,10 @@
   "keySlots": [1, 2],
   "keySlotsNot": "Normal turlarda yalnızca bu yuvalardaki anahtarlar sırayla kullanılır (1 = REEFAPI_KEY, 2 = REEFAPI_KEY_2 … 6 = REEFAPI_KEY_6). Diğer yuvalar gizli kasada kalsa da devre dışıdır; geri açmak için numarayı listeye ekleyin, ör. [1, 2, 3]. Elle denemedeki key_slot bu listeden bağımsızdır.",
   "limits": {
-    "maxRunsPerDay": 2,
-    "minGapHours": 3,
+    "maxRunsPerDay": 3,
+    "minGapHours": 2,
     "maxCreditsPerRun": 110,
-    "maxCreditsPerDay": 220,
+    "maxCreditsPerDay": 330,
     "retainDays": 3,
     "maxPriceGap": 1.5,
     "gapCredits": 30

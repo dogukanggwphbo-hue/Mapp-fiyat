@@ -178,18 +178,20 @@ test('saklama süresi: 3 günden eski görülmemiş kayıt düşer', async () =>
   assert.ok(out.feed.items.some((i) => i.key === '8806099044916'));
 });
 
-test('günlük sınır: günde en fazla 2 tur, ertesi gün yeniden', async () => {
+test('günlük sınır: günde en fazla 3 tur, ertesi gün yeniden', async () => {
   const dir = tmp();
   const h = handlerFor({ mm: [MM.a57], tk: [TK.a57] });
-  const c1 = fakeClient(h), c2 = fakeClient(h), c3 = fakeClient(h), c4 = fakeClient(h);
+  const Tm = new Date('2026-11-05T09:00:00Z'); // 12:00 TR
+  const c1 = fakeClient(h), c2 = fakeClient(h), c3 = fakeClient(h), c4 = fakeClient(h), c5 = fakeClient(h);
   await run({ makeClient: () => c1, cfg: CFG, dir, now: T1, log: () => {} });
-  await run({ makeClient: () => c2, cfg: CFG, dir, now: T2, log: () => {} });
-  const third = await run({ makeClient: () => c3, cfg: CFG, dir, now: T3, log: () => {} });
-  assert.equal(third.skipped, 'tur-siniri');
-  assert.equal(c3.calls.length, 0); // üçüncü turda API'ye hiç gidilmedi
-  assert.ok(c1.calls.length > 0 && c2.calls.length > 0);
-  await run({ makeClient: () => c4, cfg: CFG, dir, now: D2, log: () => {} });
-  assert.ok(c4.calls.length > 0);
+  await run({ makeClient: () => c2, cfg: CFG, dir, now: Tm, log: () => {} });
+  await run({ makeClient: () => c3, cfg: CFG, dir, now: T2, log: () => {} });
+  const fourth = await run({ makeClient: () => c4, cfg: CFG, dir, now: T3, log: () => {} });
+  assert.equal(fourth.skipped, 'tur-siniri');
+  assert.equal(c4.calls.length, 0); // dördüncü turda API'ye hiç gidilmedi
+  assert.ok(c1.calls.length > 0 && c2.calls.length > 0 && c3.calls.length > 0);
+  await run({ makeClient: () => c5, cfg: CFG, dir, now: D2, log: () => {} });
+  assert.ok(c5.calls.length > 0);
   assert.equal(istDay(new Date('2026-11-05T22:00:00Z'), 'Europe/Istanbul'), '2026-11-06'); // gece yarısı TR saatine göre
 });
 
@@ -391,7 +393,7 @@ test('kuru tur (--dry): sınırlara uyar, kredi harcamaz, hiçbir sorgu yapmaz, 
   assert.ok(!fs.existsSync(path.join(dir, 'data/prices.json')) && !fs.existsSync(path.join(dir, 'data/state.json')), 'kuru tur kayıt bırakmaz');
   // günlük sınır dolu: kuru tur da atlar
   fs.mkdirSync(path.join(dir, 'data'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'data/state.json'), JSON.stringify({ runs: [{ at: '2026-11-05T03:30:00Z', credits: 80, ok: true, force: false }, { at: '2026-11-05T11:30:00Z', credits: 80, ok: true, force: false }] }));
+  fs.writeFileSync(path.join(dir, 'data/state.json'), JSON.stringify({ runs: [{ at: '2026-11-05T03:30:00Z', credits: 80, ok: true, force: false }, { at: '2026-11-05T07:30:00Z', credits: 80, ok: true, force: false }, { at: '2026-11-05T11:30:00Z', credits: 80, ok: true, force: false }] }));
   const out2 = await run({ makeClient: () => fc, cfg: CFG, dir, now: new Date('2026-11-05T12:00:00Z'), dry: true, log: () => {} });
   assert.equal(out2.skipped, 'tur-siniri'); assert.equal(fc.calls.length, 0);
 });

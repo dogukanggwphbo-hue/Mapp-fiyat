@@ -206,12 +206,20 @@ export async function run({ makeClient, cfg, dir, now = new Date(), force = fals
     for (const k of Object.keys(state.badKeys)) if (Date.parse(state.badKeys[k].at) < cut) { delete state.badKeys[k]; keyChanged = true; }
     if (!Object.keys(state.badKeys).length) delete state.badKeys;
   }
+  // Kredi bakiyesi (elle bildirilir): state.balance = { credits, at, fp }. Aynı anahtarla (fp) harcanan her tur düşülür; kalan tahmini günlüğe yazılır.
+  // Gerçek bakiye ReefAPI panelindedir; bu yalnızca iki bildirim arasındaki tahmindir.
+  let balNote = '';
+  const bal = state.balance;
+  if (bal && Number.isFinite(bal.credits)) {
+    if (client.spent > 0 && (!bal.fp || bal.fp === client.activeFp)) { bal.credits = Math.max(0, bal.credits - client.spent); bal.updated = nowIso; }
+    balNote = ` · tahmini kalan ${bal.credits} kredi`;
+  }
   if (client.spent > 0 || anyFresh) {
     const keep = Date.parse(nowIso) - 30 * 86400000;
     state.runs = (state.runs || []).filter((r) => Date.parse(r.at) >= keep).concat([{ at: nowIso, credits: client.spent, ok: anyFresh, force: !!force, ...(client.activeFp ? { fp: client.activeFp } : {}), ...(client.activeSlot ? { slot: client.activeSlot } : {}) }]);
     writeJson(statePath, state, 1);
   } else if (keyChanged) writeJson(statePath, state, 1);
-  log(`Bitti · bu tur ${client.spent} kredi · bugün toplam ${spentToday + client.spent} · ${feed.items.length} kayıt · ${istDay(now, cfg.tz)}`);
+  log(`Bitti · bu tur ${client.spent} kredi${balNote} · bugün toplam ${spentToday + client.spent} · ${feed.items.length} kayıt · ${istDay(now, cfg.tz)}`);
   return { feed, wrote, problems, credits: client.spent };
 }
 

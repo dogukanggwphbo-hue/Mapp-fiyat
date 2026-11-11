@@ -420,6 +420,27 @@ test('uçtan uca: anahtar bitince tur yedek anahtarla sürer; işaret durum dosy
   assert.ok(!st2.badKeys, 'çalışan anahtarın kredi işareti temizlendi');
 });
 
+test('kredi bakiyesi: state.balance aynı anahtarla harcanan turda düşer, başka anahtarla düşmez; kuru turda dokunulmaz; günlüğe tahmini kalan yazılır', async () => {
+  const dir = tmp();
+  const sp = path.join(dir, 'data/state.json');
+  fs.mkdirSync(path.dirname(sp), { recursive: true });
+  fs.writeFileSync(sp, JSON.stringify({ runs: [], balance: { credits: 1000, at: T1.toISOString(), fp: keyFp(KA) } }));
+  const mk = (fp) => Object.assign(Object.create(fakeClient(handlerFor())), { get badKeys() { return []; }, get keyIndex() { return 0; }, get activeFp() { return fp; } });
+  const logs = [];
+  await run({ makeClient: () => mk(keyFp(KB)), cfg: CFG, dir, now: T1, force: true, log: (m) => logs.push(m) });
+  assert.equal(JSON.parse(fs.readFileSync(sp, 'utf8')).balance.credits, 1000, 'başka anahtarla harcandı: düşülmez');
+  const c = mk(keyFp(KA));
+  await run({ makeClient: () => c, cfg: CFG, dir, now: new Date(T1.getTime() + 8 * 3600e3), force: true, log: (m) => logs.push(m) });
+  assert.ok(c.spent > 0);
+  const st = JSON.parse(fs.readFileSync(sp, 'utf8'));
+  assert.equal(st.balance.credits, 1000 - c.spent);
+  assert.equal(st.balance.fp, keyFp(KA));
+  assert.ok(logs.some((m) => new RegExp(`tahmini kalan ${1000 - c.spent} kredi`).test(m)));
+  const before = fs.readFileSync(sp, 'utf8');
+  await run({ makeClient: () => mk(keyFp(KA)), cfg: CFG, dir, now: new Date(T1.getTime() + 20 * 3600e3), force: true, dry: true, log: () => {} });
+  assert.equal(fs.readFileSync(sp, 'utf8'), before, 'kuru tur durum dosyasını değiştirmez');
+});
+
 test('sayfalama: yalnızca pazaryeri satırlarından oluşan sayfa taramayı bitirmez', async () => {
   const mp = (n) => ({ ...MM.market, product_id: 'mp' + n, ean: '', title: `SAMSUNG Galaxy A57 8/256GB Akıllı Telefon Mor ${n}`, url: `https://www.mediamarkt.com.tr/tr/product/_mp-${n}.html` });
   const pages = { 1: [mp(1), mp(2), mp(3)], 2: [MM.a57, MM.a37] };

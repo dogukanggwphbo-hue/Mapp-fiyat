@@ -194,7 +194,9 @@ async function main() {
   const dry = process.argv.includes('--dry'); // kuru tur: zamanlama/anahtar sırası denemesi, kredi harcamaz
   // Anahtarlar öncelik sırasıyla: REEFAPI_KEY, REEFAPI_KEY_2 … REEFAPI_KEY_6. Biri biterse/geçersizse sıradaki ile kesintisiz devam edilir.
   const pk = pickKeys(process.env, cfg.keySlots);
-  console.log('Anahtar parmak izleri: ' + (pk.entries.map((e) => `${e.slot}=${keyFp(e.k)}`).join(' ') || 'yok'));
+  // Gizli kasada tanımlı bütün yuvalar listelenir; keySlots dışında kalanlar "(kapalı)" işaretlenir (anahtar kaybolup kaybolmadığını görmek için).
+  const offSlot = (s) => !pk.only && Array.isArray(cfg.keySlots) && cfg.keySlots.length && !cfg.keySlots.map(Number).includes(s);
+  console.log('Anahtar parmak izleri: ' + (pickKeys(process.env).entries.map((e) => `${e.slot}=${keyFp(e.k)}${offSlot(e.slot) ? '(kapalı)' : ''}`).join(' ') || 'yok'));
   if (!pk.only && Array.isArray(cfg.keySlots) && cfg.keySlots.length) console.log(`Kullanılan anahtar yuvaları (config.json > keySlots): ${cfg.keySlots.join(', ')} · diğerleri devre dışı.`);
   if (pk.only) console.log(`Deneme turu: yalnızca ${pk.only}. anahtar kullanılır, yedeğe geçilmez.` + (pk.missing ? ` HATA: REEFAPI_KEY_${pk.only} gizli kasada tanımlı değil.` : ''));
   const out = await run({

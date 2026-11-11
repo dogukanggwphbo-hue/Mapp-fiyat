@@ -44,14 +44,19 @@ export function rotateKeys(entries, state, from) {
 
 const KEY_NAMES = ['REEFAPI_KEY', 'REEFAPI_KEY_2', 'REEFAPI_KEY_3', 'REEFAPI_KEY_4', 'REEFAPI_KEY_5', 'REEFAPI_KEY_6'];
 /**
- * Ortamdaki anahtarları öncelik sırasıyla okur. REEFAPI_ONLY=2..6 (elle deneme turu): yalnızca o yuvadaki anahtar kullanılır, yedeğe geçilmez.
+ * Ortamdaki anahtarları öncelik sırasıyla okur. REEFAPI_ONLY=2..6 (elle deneme turu): yalnızca o yuvadaki anahtar kullanılır, yedeğe geçilmez
+ * (config'teki `keySlots` bu elle denemeyi kısıtlamaz).
+ * `enabled` (config.json > keySlots, ör. [1, 2]): normal turlarda yalnızca bu yuvalar sırayla kullanılır; diğer yuvalardaki anahtarlar gizli kasada kalsa da
+ * devre dışıdır. Boş/tanımsızsa tanımlı bütün yuvalar kullanılır.
  * Dönen: { entries: [{k, slot}], only, missing }
  */
-export function pickKeys(env) {
+export function pickKeys(env, enabled) {
   const all = KEY_NAMES.map((n, i) => ({ k: String(env[n] || '').trim(), slot: i + 1 })).filter((e) => e.k);
   const only = /^[2-6]$/.test(String(env.REEFAPI_ONLY || '').trim()) ? Number(String(env.REEFAPI_ONLY).trim()) : 0;
   if (only) { const e = all.find((x) => x.slot === only); return { entries: e ? [e] : [], only, missing: !e }; }
-  return { entries: all.filter((e, i, a) => a.findIndex((x) => x.k === e.k) === i), only: 0, missing: false };
+  const on = Array.isArray(enabled) && enabled.length ? enabled.map(Number) : null;
+  const use = on ? all.filter((e) => on.includes(e.slot)) : all;
+  return { entries: use.filter((e, i, a) => a.findIndex((x) => x.k === e.k) === i), only: 0, missing: false };
 }
 
 export async function run({ makeClient, cfg, dir, now = new Date(), force = false, dry = false, log = console.log }) {
@@ -188,8 +193,9 @@ async function main() {
   const force = process.argv.includes('--force');
   const dry = process.argv.includes('--dry'); // kuru tur: zamanlama/anahtar sırası denemesi, kredi harcamaz
   // Anahtarlar öncelik sırasıyla: REEFAPI_KEY, REEFAPI_KEY_2 … REEFAPI_KEY_6. Biri biterse/geçersizse sıradaki ile kesintisiz devam edilir.
-  const pk = pickKeys(process.env);
+  const pk = pickKeys(process.env, cfg.keySlots);
   console.log('Anahtar parmak izleri: ' + (pk.entries.map((e) => `${e.slot}=${keyFp(e.k)}`).join(' ') || 'yok'));
+  if (!pk.only && Array.isArray(cfg.keySlots) && cfg.keySlots.length) console.log(`Kullanılan anahtar yuvaları (config.json > keySlots): ${cfg.keySlots.join(', ')} · diğerleri devre dışı.`);
   if (pk.only) console.log(`Deneme turu: yalnızca ${pk.only}. anahtar kullanılır, yedeğe geçilmez.` + (pk.missing ? ` HATA: REEFAPI_KEY_${pk.only} gizli kasada tanımlı değil.` : ''));
   const out = await run({
     makeClient: (max, state) => {

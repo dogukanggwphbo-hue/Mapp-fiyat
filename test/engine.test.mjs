@@ -795,6 +795,27 @@ test('altı anahtar: REEFAPI_KEY … REEFAPI_KEY_6 okunur; key_slot 2-6 destekle
   assert.deepEqual(rotateKeys(sparse, { runs: [R('2026-11-09T07:31:00Z', 3)] }, FROM).map((e) => e.slot), [6, 1, 2, 3]);
 });
 
+test('keySlots: yalnızca 1. ve 2. anahtar sırayla kullanılır; 3-6 devre dışı; elle key_slot bundan bağımsız; boş liste hepsini açar', () => {
+  const ks = ['K1' + 'a'.repeat(30), 'K2' + 'b'.repeat(30), 'K3' + 'c'.repeat(30), 'K4' + 'd'.repeat(30), 'K5' + 'e'.repeat(30), 'K6' + 'f'.repeat(30)];
+  const env = { REEFAPI_KEY: ks[0], REEFAPI_KEY_2: ks[1], REEFAPI_KEY_3: ks[2], REEFAPI_KEY_4: ks[3], REEFAPI_KEY_5: ks[4], REEFAPI_KEY_6: ks[5] };
+  const pk = pickKeys(env, [1, 2]);
+  assert.deepEqual(pk.entries, [{ k: ks[0], slot: 1 }, { k: ks[1], slot: 2 }]);
+  assert.deepEqual(pickKeys(env, ['1', '2']).entries.map((e) => e.slot), [1, 2], 'sayı metin olarak yazılsa da çalışır');
+  assert.deepEqual(pickKeys(env, [2]).entries.map((e) => e.slot), [2]);
+  assert.deepEqual(pickKeys(env, []).entries.map((e) => e.slot), [1, 2, 3, 4, 5, 6], 'boş liste: hepsi');
+  assert.deepEqual(pickKeys(env).entries.map((e) => e.slot), [1, 2, 3, 4, 5, 6], 'tanımsız: hepsi');
+  assert.deepEqual(pickKeys({ ...env, REEFAPI_KEY: '' }, [1, 2]).entries.map((e) => e.slot), [2], 'yuvadaki anahtar yoksa atlanır');
+  assert.deepEqual(pickKeys({ ...env, REEFAPI_ONLY: '4' }, [1, 2]), { entries: [{ k: ks[3], slot: 4 }], only: 4, missing: false }, 'elle deneme listeyi aşar');
+  const FROM = '2026-11-08T00:00:00+03:00';
+  const R = (at, slot, force = false) => ({ at, credits: 90, ok: true, force, slot });
+  const order = (runs) => rotateKeys(pk.entries, { runs }, FROM).map((e) => e.slot);
+  assert.deepEqual(order([]), [1, 2]);
+  assert.deepEqual(order([R('2026-11-11T07:29:00Z', 2)]), [1, 2], '2. ile bitti → sıradaki 1.');
+  assert.deepEqual(order([R('2026-11-11T07:29:00Z', 1)]), [2, 1], '1. ile bitti → sıradaki 2.');
+  assert.deepEqual(order([R('2026-11-11T07:29:00Z', 1), R('2026-11-11T07:46:00Z', 2, true)]), [2, 1], 'deneme (force) turu sırayı bozmaz');
+  assert.deepEqual(order([R('2026-11-11T07:29:00Z', 3)]), [1, 2], 'devre dışı yuva eski kayıtta kalsa da sıra bozulmaz');
+});
+
 test('iş akışı: 4-6. anahtar gizli kasadan ortama aktarılır ve key_slot seçeneklerinde vardır', () => {
   // depoda .github/workflows/fiyat.yml; müşteriye verilen pakette aynı dosya ADIM-3-fiyat.yml.txt adıyla durur
   const f = ['../.github/workflows/fiyat.yml', '../ADIM-3-fiyat.yml.txt'].map((x) => new URL(x, import.meta.url)).find((u) => fs.existsSync(u));

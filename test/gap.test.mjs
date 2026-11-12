@@ -439,3 +439,36 @@ test('gerçek satır (Teknosa): Tab S10 FE+ Navy Teknosa\'da model adıyla bulun
   assert.equal(r.verdicts['8806097196587'], 'bulundu');
   assert.equal(r.items.find((x) => x.key === '8806097196587').price, 38999);
 });
+
+import { dropGone } from '../lib/gap.mjs';
+test('kayıp teklif: mağaza ürünü artık kendi satışında sunmuyorsa (olumsuz sonuç son görülmeden yeni) tutulan eski kayıt çıkarılır; taze kayıt ve "bulundu" kalır', () => {
+  const NOW = '2026-11-12T10:00:00.000Z';
+  const mk = (key, checkedAt, ch = 'teknosa') => ({ ch, key, checkedAt, label: key });
+  const items = [mk('a', '2026-11-11T12:00:00.000Z'), mk('b', '2026-11-11T12:00:00.000Z'), mk('c', NOW), mk('d', '2026-11-11T12:00:00.000Z'), mk('e', '2026-11-11T12:00:00.000Z', 'mediamarkt'), mk('f', '2026-11-11T12:00:00.000Z')];
+  const cache = {
+    a: { at: '2026-11-11T16:00:00.000Z', why: 'yok' },        // olumsuz, son görülmeden SONRA → çıkar
+    b: { at: '2026-11-11T16:00:00.000Z', why: 'pazaryeri' },  // yalnızca pazaryeri → çıkar
+    c: { at: '2026-11-11T16:00:00.000Z', why: 'yok' },        // bu turda taze görüldü → kalır
+    d: { at: '2026-11-11T16:00:00.000Z', why: 'bulundu' },    // bulundu → kalır
+    e: { at: '2026-11-11T16:00:00.000Z', why: 'yok' },        // başka kanal → kalır
+    f: { at: '2026-11-11T09:00:00.000Z', why: 'yok' },        // olumsuz sonuç son görülmeden ESKİ → kalır
+  };
+  assert.deepEqual(dropGone({ items, store: 'teknosa', cache, nowIso: NOW }).map((i) => i.key).sort(), ['a', 'b']);
+  assert.deepEqual(dropGone({ items, store: 'teknosa', cache: {}, nowIso: NOW }), []);
+});
+
+test('uçtan uca: Teknosa daha önce satan ürünü artık kendi satışında sunmuyorsa (genel aramada yok, doğrudan aramada yok) eski kayıt feed\'den çıkar', async () => {
+  const dir = tmp();
+  const c1 = fakeClient(world({ mm: [MM.a57, MM.a37], tk: [TK.a57, TK.a37], vt: [] }));
+  const o1 = await run({ makeClient: () => c1, cfg: CFG, dir, now: T1, log: () => {} });
+  assert.deepEqual(byCh(o1.feed, 'teknosa').map((i) => i.key).sort(), [EAN_A37, EAN_A57].sort());
+  const c2 = fakeClient(world({ mm: [MM.a57, MM.a37], tk: [TK.a57], vt: [] })); // A37: Teknosa'nın kendi satışında artık yok
+  const logs = [];
+  const o2 = await run({ makeClient: () => c2, cfg: CFG, dir, now: T2, log: (l) => logs.push(l) });
+  assert.deepEqual(direct(c2, 'teknosa'), ['Galaxy A37']);
+  assert.deepEqual(byCh(o2.feed, 'teknosa').map((i) => i.key), [EAN_A57], 'eski A37 kaydı tutulmadı');
+  assert.equal(o2.feed.run.stores.teknosa.gap.dropped, 1);
+  assert.equal(o2.feed.sites.teknosa.count, 1);
+  assert.ok(logs.some((l) => /kendi satışında artık bulunmayan 1 kayıt/.test(l)));
+  assert.ok(byCh(o2.feed, 'mediamarkt').some((i) => i.key === EAN_A37), 'diğer kanallara dokunulmadı');
+});

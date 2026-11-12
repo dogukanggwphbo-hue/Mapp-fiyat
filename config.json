@@ -59,6 +59,7 @@
       ],
       "note": "Teknosa'da anahtar sözcük araması telefonları öne çıkarır; saat, kulaklık ve şarj aletleri bu yüzden KATEGORİ koduyla taranır (100004001 Akıllı Saat, 10000601 Bluetooth Kulaklık, 10000603 Kulak İçi Kulaklık, 100002003 Şarj Aleti).",
       "gap": {
+        "dropGone": true,
         "enabled": true,
         "maxQueries": 12,
         "retryNotFoundDays": 3,
@@ -73,6 +74,7 @@
       "brand": "SAMSUNG",
       "creditsPerCall": 2,
       "gap": {
+        "dropGone": true,
         "enabled": true,
         "maxQueries": 8,
         "retryNotFoundDays": 3,

@@ -26,6 +26,10 @@ on:
         description: 'Anahtar sınaması: kasadaki her anahtara 1 kredilik tek istek atar ve çalışıp çalışmadığını gösterir; veri yazmaz'
         type: boolean
         default: false
+      detail:
+        description: 'Ürün detayı kontrolü: Teknosa ürün kodlarını (virgülle ayırın, en çok 8) yazın; her biri için en çok 2 kredi harcanır, satıcı ve teklifler günlükte görünür; veri yazmaz'
+        type: string
+        default: ''
       key_slot:
         description: 'Anahtar: auto = normal sıra (config.json > keySlots sırayla); 2-6 = yalnızca o anahtarla dene (yedeğe geçilmez)'
         type: choice
@@ -63,7 +67,8 @@ jobs:
           REEFAPI_KEY_5: ${{ secrets.REEFAPI_KEY_5 }}
           REEFAPI_KEY_6: ${{ secrets.REEFAPI_KEY_6 }}
           REEFAPI_ONLY: ${{ inputs.key_slot == 'auto' && '' || inputs.key_slot }}
-        run: node collect.mjs ${{ inputs.force && '--force' || '' }} ${{ inputs.dry && '--dry' || '' }} ${{ inputs.probe && '--probe' || '' }}
+          DETAIL_IDS: ${{ inputs.detail }}
+        run: node collect.mjs ${{ inputs.force && '--force' || '' }} ${{ inputs.dry && '--dry' || '' }} ${{ inputs.probe && '--probe' || '' }} ${{ inputs.detail != '' && '--detail' || '' }}
       - name: Kaydet
         if: always()
         run: |

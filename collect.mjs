@@ -10,6 +10,7 @@ import { gapPass } from './lib/gap.mjs';
 import * as teknosa from './collectors/teknosa.mjs';
 import * as mediamarkt from './collectors/mediamarkt.mjs';
 import * as vatan from './collectors/vatan.mjs';
+import { detailCheck, parseIds } from './lib/detail.mjs';
 
 const COLLECTORS = [teknosa, mediamarkt, vatan]; // ucuzdan pahalıya; biri çökse diğerleri etkilenmez
 const ORDER = { mediamarkt: 0, teknosa: 1, vatan: 2 };
@@ -239,6 +240,16 @@ async function main() {
     console.log(`Anahtar sınaması: ${all.length} yuva, her biri için 1 kredilik tek istek (keySlots'tan bağımsız).`);
     if (!all.length) console.log('Hiç anahtar tanımlı değil.');
     await probeKeys({ entries: all, cfg });
+    return;
+  }
+  if (process.argv.includes('--detail')) { // ürün detayı kontrolü: veri yazmaz, sıra/durum dosyasına dokunmaz (lib/detail.mjs)
+    const ids = parseIds(process.env.DETAIL_IDS);
+    if (!ids.length) { console.log('Ürün kodu verilmedi (6-15 haneli Teknosa ürün kodları, virgülle ayrılmış).'); return; }
+    if (!pk.entries.length) { console.log('Hiç anahtar tanımlı değil.'); return; }
+    console.log(`Ürün detayı kontrolü: ${ids.length} ürün, en çok ${ids.length * 2} kredi.`);
+    const dc = createClient({ keys: pk.entries.map((e) => e.k), slots: pk.entries.map((e) => e.slot), maxCredits: ids.length * 2 + 1 });
+    await detailCheck({ client: dc, ids });
+    console.log(`Bitti · ${dc.spent} kredi harcandı. Veri yazılmadı.`);
     return;
   }
   if (!pk.only && Array.isArray(cfg.keySlots) && cfg.keySlots.length) console.log(`Kullanılan anahtar yuvaları (config.json > keySlots): ${cfg.keySlots.join(', ')} · diğerleri devre dışı.`);

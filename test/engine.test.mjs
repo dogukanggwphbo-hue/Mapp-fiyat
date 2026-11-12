@@ -869,3 +869,18 @@ test('iş akışı: 4-6. anahtar gizli kasadan ortama aktarılır ve key_slot se
   for (const n of ['', '_2', '_3', '_4', '_5', '_6']) assert.match(y, new RegExp(`REEFAPI_KEY${n}: \\$\\{\\{ secrets\\.REEFAPI_KEY${n} \\}\\}`));
   assert.match(y, /options: \[auto, '2', '3', '4', '5', '6'\]/);
 });
+
+import { parseIds, describe as describeDetail, detailCheck } from '../lib/detail.mjs';
+test('ürün detayı kontrolü: kodlar ayıklanır, satıcı/teklif satırları yazılır, veri yazılmaz', async () => {
+  assert.deepEqual(parseIds(' 100000061518, abc;100000061518 12 1000000615190000000 '), ['100000061518']);
+  const p = { title: 'Samsung Galaxy S26+', price: 86499, seller: { name: 'X Mağaza', shop_id: 77, is_teknosa: false }, other_offers: [{ seller: { name: 'TEKNOSA', shop_id: 'teknosa', is_teknosa: true }, price: 75999, seller_id_param: 'teknosa' }] };
+  const L = describeDetail(p, 'Varsayılan');
+  assert.ok(L.some((l) => /X Mağaza.*is_teknosa=false/.test(l)) && L.some((l) => /TEKNOSA.*75\.999.*seller_id_param=teknosa/.test(l)));
+  const calls = [];
+  const client = { call: async (e, a, params) => { calls.push([e, a, params]); return { data: { product: p } }; } };
+  const logs = [];
+  const out = await detailCheck({ client, ids: ['100000061518'], log: (l) => logs.push(l) });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1][2], { product_id: '100000061518', seller_id: 'teknosa' });
+  assert.equal(out.length, 1);
+});
